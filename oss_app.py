@@ -66,6 +66,8 @@ def _(mo, reset_button, starting_path):
         label='''###Select CSV file to import.<br /></h3><font color="khaki">If file not visible below, make sure it is inside the "raw_csv" folder.''',
     )
 
+
+
     # file selector
     file = mo.md('''
         {browser}
@@ -225,6 +227,7 @@ def _(Path, datetime, filename, filepath_parent, mo, overwrite):
     ]))
     return (
         create_btn,
+        load_btn,
         loaded_params,
         params_file,
         save_path,
@@ -280,12 +283,24 @@ def _(mo):
 
 
 @app.cell
-def _(display_selections_markdown, json, mo, params_file, set_loaded_params):
-    if True:  # load_btn.value:  # load params pressed
+def _(
+    display_selections_markdown,
+    json,
+    load_btn,
+    loaded_params,
+    mo,
+    params_file,
+    set_loaded_params,
+):
+    if load_btn.value:  # load params pressed
         with open(params_file, 'r') as _file:
             previous_params = json.load(_file)
         set_loaded_params(True)
+    
+    if not loaded_params():
+        previous_params = None
 
+    mo.stop(not load_btn.value)
     mo.ui.tabs({
         'Parameters loaded': display_selections_markdown(previous_params, 'Loaded Parameters'),
         'JSON file': mo.json(previous_params, label='Loaded PARAMS.JSON')
@@ -375,6 +390,7 @@ def _(mo):
 
 @app.cell
 def _(df, loaded_params, mo, previous_params):
+
     # Create dropdowns for selecting columns, or fill in with loaded parameters
     subject_id_selector = mo.ui.multiselect(
         options=df.columns.tolist(), label="ID Variable", max_selections=1,
