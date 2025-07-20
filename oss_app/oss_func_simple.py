@@ -489,7 +489,8 @@ class DataDF:
         new_columns = [x.replace(' ', '_').replace('-', '_') for x in columns]
         mapping = {c: nc for c, nc in zip(columns, new_columns)}
         self.raw_df.rename(columns=mapping, inplace=True)
-        self.raw_df.dropna(axis=1, inplace=True)
+        fixed_raw_df = self.raw_df.dropna(axis=1, inplace=False)  # drop empty columns
+        self.raw_df = fixed_raw_df
 
     def define_groups(self, group_variables: list[str], label_sep='-', column_name='Group'):
         """Define a new column with subject's group as determined by combination of
