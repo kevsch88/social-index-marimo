@@ -105,11 +105,11 @@ def _(checkbox_style, mo, overwrite_cbox):
 async def _(asyncio, file, file_drop, file_ui, mo, reset_button):
 
     # reset gui
-    mo.output.append(mo.tabs({
+    mo.output.append(mo.ui.tabs({
         'file explorer': file,
         'drag & drop': file_drop.style({'display':'flex-grow','width':'400px','height':'350px','justify-self':'center'})
-    
     }))
+
     if reset_button.value:
         mo.output.clear()
         with mo.status.spinner(title="Reloading GUI...") as _spinner:
@@ -187,11 +187,20 @@ def _(Path, file, file_drop, mo, overwrite_cbox):
         /// tip | Overwrite set to False, new outputs will be created, with appended numbers if already present.
         """)
     mo.output.append(_notice)
-    return filename, filepath, filepath_parent, overwrite
+    return file_not_chosen, filename, filepath, filepath_parent, overwrite
 
 
 @app.cell
-def _(Path, datetime, filename, filepath_parent, mo, overwrite):
+def _(
+    Path,
+    datetime,
+    file_not_chosen,
+    filename,
+    filepath_parent,
+    mo,
+    overwrite,
+):
+    mo.stop(file_not_chosen)
     create_btn = mo.ui.run_button(label='Create new output folders')
 
     # output folder will be in input file folder
@@ -292,7 +301,7 @@ def _(
         with open(params_file, 'r') as _file:
             previous_params = json.load(_file)
         set_loaded_params(True)
-    
+
     if not loaded_params():
         previous_params = None
 
@@ -342,14 +351,9 @@ def _(
 
 
 @app.cell
-def _(filepath, pd):
+def _(create_btn, filepath, loaded_params, mo, pd):
+    mo.stop(create_btn.value == False and not loaded_params())
     df = pd.read_csv(filepath)
-    return (df,)
-
-
-@app.cell
-def _(df, mo):
-
     choice = mo.ui.switch(False, label="### Advanced")
 
     mo.vstack([
@@ -361,7 +365,7 @@ def _(df, mo):
     # use below if you want to save a transformation
     # transformed_df = mo.ui.dataframe(df)
     # transformed_df
-    return
+    return (df,)
 
 
 @app.cell
@@ -453,7 +457,7 @@ def _(
     )
 
     # button to confirm choices
-    submit_choices = mo.ui.run_button(label="Confirm Selections", kind='warn')
+    submit_choices = mo.ui.run_button(label="Confirm Selections", kind='warn', disabled=loaded_params())
     var_choices = {}
     return metric_columns_selector, submit_choices, var_choices
 
@@ -462,6 +466,7 @@ def _(
 def _(
     grouping_variable_selector,
     index_column_selector,
+    loaded_params,
     metric_columns_selector,
     mo,
     sex_variable_selector,
@@ -558,7 +563,7 @@ def _(
             {'width': 'fit-content', 'padding': '20px 20px'}).right()
     ])
 
-    if submit_choices.value:
+    if submit_choices.value or loaded_params():
         var_choices.update({
             "subject_id_variable": subject_id_selector.value,
             "grouping_variable": grouping_variable_selector.value,
@@ -610,12 +615,6 @@ def _(loaded_params, mo):
 
 
 @app.cell
-def _():
-    # mo.ui.dataframe(prefiltered_df)
-    return
-
-
-@app.cell
 def _(
     all_choices,
     df,
@@ -644,24 +643,13 @@ def _(
         loaded_transforms = format_filters(previous_params['filters'])
 
     filter_ui = mo.ui.dataframe(prefiltered_df)
-    # mo.output.append(filter_ui)
+
     if load_filters_btn.value:
         filter_ui._Initialized = False
         preloaded_args = filter_ui._args
         preloaded_args.initial_value["transforms"] = loaded_transforms
         filter_ui._initialize(preloaded_args)
         filter_ui._Initialized = True
-
-    # if load_filters_btn.value:
-    #     set_filters_loaded(True)
-
-    # if load_filters_btn.value:  # if loading saved filters
-    #     with mo.redirect_stdout():
-    #         print('loaded filters')
-    #     preloaded_args = mo.ui.dataframe(prefiltered_df)._args
-    #     preloaded_args.initial_value["transforms"] = format_filters(previous_params['filters'])
-        # filter_ui._initialize(preloaded_args)  # initialize with preset arguments
-    # filter_ui._initialized = True
     return (filter_ui,)
 
 
@@ -685,6 +673,7 @@ def _(filter_ui, load_filters_btn, mo):
 
 @app.cell
 def _(filter_ui):
+
     # retrieve filters applied
     filter_type = filter_ui._last_transforms.transforms[0].type.value
     filter_operator = filter_ui._last_transforms.transforms[0].operation
