@@ -66,7 +66,17 @@ def _(mo, reset_button, starting_path):
         label='''###Select CSV file to import.<br /></h3><font color="khaki">If file not visible below, make sure it is inside the "raw_csv" folder.''',
     )
 
-
+    # file drag and drop
+    file_drop_ui = mo.ui.file(
+        filetypes=['.csv'], 
+        multiple=False,
+        kind='area', 
+        label='###Drop or select a CSV file to open.<br /></h3>Then click "Confirm Selection" to import, if it has issues importing file, use the file explorer.',
+    )
+    file_drop = file_drop_ui.form(
+        bordered=True, loading=False,
+        submit_button_label="Confirm Selection"
+    )
 
     # file selector
     file = mo.md('''
@@ -81,7 +91,7 @@ def _(mo, reset_button, starting_path):
     )
     # <span style='display:inline; float:right; box-sizing:border-box; border:1px solid coral; padding-left:5px'>{overwrite}<br>{append}</span>
     # selections for overwriting or appending outputs
-    return (file,)
+    return file, file_drop
 
 
 @app.cell
@@ -92,10 +102,14 @@ def _(checkbox_style, mo, overwrite_cbox):
 
 
 @app.cell
-async def _(asyncio, file, file_ui, mo, reset_button):
+async def _(asyncio, file, file_drop, file_ui, mo, reset_button):
 
     # reset gui
-    mo.output.append(file)
+    mo.output.append(mo.tabs({
+        'file explorer': file,
+        'drag & drop': file_drop.style({'display':'flex-grow','width':'400px','height':'350px','justify-self':'center'})
+    
+    }))
     if reset_button.value:
         mo.output.clear()
         with mo.status.spinner(title="Reloading GUI...") as _spinner:
@@ -143,44 +157,26 @@ def _(append_choice, mo, overwrite_choice):
 
 
 @app.cell
-def _():
-    # form = (
-    #     mo.md(
-    #         '''
-    #     **Enter your prompt.**
-
-    #     {prompt}
-
-    #     **Choose a random seed.**
-
-    #     {seed}
-    #     '''
-    #     )
-    #     .batch(
-    #         prompt=mo.ui.text_area(),
-    #         seed=mo.ui.number(),
-    #     )
-    #     .form()
-    # )
-    # form
-    return
-
-
-@app.cell
-def _(Path, file, mo, overwrite_cbox):
+def _(Path, file, file_drop, mo, overwrite_cbox):
     # Prevent progression if no file selected, mo.stop prevents code below from running.
-    file_not_chosen = file.value is None
+    file_not_chosen = (file.value is None) and (file_drop.value is None)
     mo.stop(file_not_chosen, mo.md(
         "###**Confirm file selection to continue...**"))
 
-    file_choice = file.value["browser"][0]
-    if file.value["browser"] == None:
-        filepath = r"raw_csv/example_SI_data.csv"
-        filename = Path(filepath).name
-    else:
-        filepath = file_choice.path
-        filename = file_choice.name
-        filepath_parent = Path(filepath).parent
+    match not file_not_chosen:
+        case _x if _x and not file.value:  # file drop upload used
+            file_choice = file_drop.value[0]
+            filename = file_choice.name
+            filepath = Path(filename).resolve()
+            with mo.redirect_stdout():
+                assert filepath.exists(), f'Issues resolving path of uploaded file : {filepath} does not exist.\nPlease use file explorer.'
+            filepath_parent = Path(filepath).parent
+        case _y if _y and not file_drop.value:  # file explorer upload used
+            file_choice = file.value["browser"][0]
+            filepath = r"raw_csv/example_SI_data.csv"
+            filename = Path(filepath).name
+
+    filepath_parent = Path(filepath).parent
     overwrite = overwrite_cbox.value
     if overwrite:
         _notice = mo.md(f"""
@@ -306,12 +302,6 @@ def _(
         'JSON file': mo.json(previous_params, label='Loaded PARAMS.JSON')
     })
     return (previous_params,)
-
-
-@app.cell
-def _(loaded_params):
-    loaded_params()
-    return
 
 
 @app.cell
