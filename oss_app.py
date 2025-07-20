@@ -565,9 +565,9 @@ def _(
 
     if submit_choices.value or loaded_params():
         var_choices.update({
-            "subject_id_variable": subject_id_selector.value,
-            "grouping_variable": grouping_variable_selector.value,
-            "sex_variable": sex_variable_selector.value,
+            "subject_id_variable": subject_id_selector.value[0],
+            "grouping_variable": grouping_variable_selector.value[0],
+            "sex_variable": sex_variable_selector.value[0],
             "index_variables": index_column_selector.value,
             "metric_variables": metric_columns_selector.value,
         })
@@ -794,7 +794,13 @@ def _(filtered_df, sf, var_choices):
     raw_data = sf.DataDF(filtered_df, var_properties)
     # raw_data.get_rawdf(str(filepath))
     raw_data.fix_columns()
-    return (raw_data,)
+    return raw_data, var_properties
+
+
+@app.cell
+def _(var_properties):
+    var_properties
+    return
 
 
 @app.cell
