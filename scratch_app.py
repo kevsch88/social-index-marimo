@@ -803,18 +803,15 @@ def _(ds, filtered_df, var_choices):
         parameters=var_choices
     )
     data.initialize()  # sets filtered dataset, sets indices & metrics and corrects columns
-    data
-    return (data,)
-
-
-@app.cell
-def _(data):
     data.create_metric_from_operation(
         'interaction_center_ratio',
         'interaction : head time (s)', 'center : time (s)',
         operation=lambda a,b: a/b 
     )
-    return
+    data.scale_metrics(per_group=False)
+    data.calculate_si()
+    data
+    return (data,)
 
 
 @app.cell
@@ -824,13 +821,6 @@ def _():
     # raw_data = sf.DataDF(filtered_df, var_properties)
     # # raw_data.get_rawdf(str(filepath))
     # raw_data.fix_columns()
-    return
-
-
-@app.cell
-def _():
-    # data.scale_metrics()  # adds new ` dataframe with Z-scored columns
-    # data.scaled_df.head(3)
     return
 
 
@@ -848,26 +838,17 @@ def _():
 
 
 @app.cell
-def _(data):
-    filtered_data = data.filtered_df
-    filtered_data.head()
-    return
-
-
-app._unparsable_cell(
-    r"""
+def _(data, mo):
     mo.vstack([
-        mo.md(\"### Preview datasets\"),
+        mo.md("### Preview datasets"),
         mo.ui.tabs({
-            \"Raw Data Preview\": mo.plain(data.raw_df.head(3)),
-            \"Filtered Data Preview\": mo.plain(data.filtered_df.head(3))
-            \"Scaled Data Preview\": mo.plain(data.scaled_df.head(3))
+            # "Raw Data Preview": mo.plain(data.raw_df.head(3)),
+            "Filtered Data Preview": mo.plain(data.filtered_df.head(3)),
+            "Scaled Data Preview": mo.plain(data.scaled_df.head(3))
         }),
-        mo.md(\"<br>\")
+        mo.md("<br>")
     ])
-    """,
-    name="_"
-)
+    return
 
 
 @app.cell
