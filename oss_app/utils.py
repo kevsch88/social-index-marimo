@@ -10,6 +10,7 @@ from typing import Union, Tuple
 from scipy.stats import norm as normf
 from sklearn import mixture
 from oss_app.dataset import Dataset
+from scipy.stats import ks_2samp
 
 # %% Helper functions for oss_app.py notebook
 
@@ -107,38 +108,6 @@ def _calculate_distribution(data_array: np.ndarray, f_axis: np.ndarray) -> tuple
 
     gmm_params = {"mean": mean, "std": std_dev}
     return dist_freq, gmm_params
-
-
-def _calculate_intersection_and_overlap_alt(gmm_params1: dict, gmm_params2: dict, rangex: list) -> tuple[float, float]:
-    """
-    Calculates the intersection point and overlap coefficient of two normal distributions.
-    """
-
-    def solve(m1_s, m2_s, std1_s, std2_s):
-        a = 1 / (2 * std1_s**2) - 1 / (2 * std2_s**2)
-        b = m2_s / (std2_s**2) - m1_s / (std1_s**2)
-        c = m1_s**2 / (2 * std1_s**2) - m2_s**2 / (2 * std2_s**2) - np.log(std2_s / std1_s)
-        roots = np.roots([a, b, c])
-        valid_roots = [r for r in roots if rangex[0] < r < rangex[1]]
-        if not valid_roots:
-            return roots[np.argmin(np.abs(roots - np.mean([m1_s, m2_s])))] if len(roots) > 0 else np.mean([m1_s, m2_s])
-        return (
-            valid_roots[0]
-            if len(valid_roots) == 1
-            else valid_roots[np.argmin(np.abs(valid_roots - np.mean([m1_s, m2_s])))]
-        )
-
-    m1, s1 = gmm_params1["mean"], gmm_params1["std"]
-    m2, s2 = gmm_params2["mean"], gmm_params2["std"]
-
-    intersect_x = solve(m1, m2, s1, s2)
-
-    if abs(m1) > abs(m2):
-        area = normf.cdf(intersect_x, m1, s1) + (1.0 - normf.cdf(intersect_x, m2, s2))
-    else:
-        area = normf.cdf(intersect_x, m2, s2) + (1.0 - normf.cdf(intersect_x, m1, s1))
-
-    return intersect_x, area
 
 
 def _calculate_intersection_and_overlap(gmm_params1: dict, gmm_params2: dict, x_range: list | np.ndarray):
@@ -334,7 +303,7 @@ def compare_dists_altair(
             anchor="middle",
             offset=10,
         ),
-    ).configure_view(strokeWidth=0)
+    )  # .configure_view(strokeWidth=0)
 
     if hide_text:
         chart = chart.configure_axis(labels=False, title=None, ticks=False, grid=False).properties(
