@@ -26,8 +26,24 @@ def _():
     import json
     from os import mkdir
     from datetime import datetime
-
-    return Path, alt, asyncio, datetime, ds, json, mo, np, pd, plt
+    from oss_app.utils import make_categorical
+    from oss_app.plotting import show_color, show_colormap, colormap_to_hex
+    return (
+        Path,
+        alt,
+        asyncio,
+        colormap_to_hex,
+        datetime,
+        ds,
+        json,
+        make_categorical,
+        mo,
+        np,
+        pd,
+        plt,
+        show_color,
+        show_colormap,
+    )
 
 
 @app.cell
@@ -262,7 +278,6 @@ def _(mo):
                 return f"* {key.replace('_', ' ').title()}: &nbsp;  `{value}`"
 
         filename = params_output["filename"]
-        filters = params_output["filters"]
         fformat = "<span style='color:coral; font-family: monospace'>"
         md_content += "#### Input file:\n&nbsp; " + f'"`{filename}`"'
         md_content += "\n#### Variables:"
@@ -281,11 +296,25 @@ def _(mo):
         md_content += "\n" + \
             format_value("metric_variables",
                          params_output.get("metric_variables"))
+    
         md_content += "\n#### Filters:"
-        for fkey, fval in filters.items():
-            md_content += "\n* " + \
-                f'{fformat}{fkey}</span>" &nbsp;== &nbsp; "{fformat}{fval}</span>"'
-
+        filters = params_output.get("filters", {})
+        if filters == {}:
+            md_content += "\n* " +f'{fformat}No filters added/loaded</span>'
+        else:
+            for fkey, fval in filters.items():
+                md_content += "\n* " + \
+                    f'{fformat}{fkey}</span>" &nbsp;== &nbsp; "{fformat}{fval}</span>"'
+        
+        md_content += "\n#### Colors:"
+        colors = params_output.get("colors", {})
+        if colors == {}:
+            md_content += "\n* " +f'{fformat}No colors chosen</span>'
+        else:
+            for group_col in colors:
+                for fkey, fval in group_col.items():
+                    md_content += "\n* " + \
+                        f'"{fformat}{fkey}</span>" &nbsp;== &nbsp; "{fformat}{fval}</span>"'
         return mo.md(md_content)
     return (display_selections_markdown,)
 
@@ -682,35 +711,114 @@ def _(filter_ui, load_filters_btn, mo):
 def _(filter_ui):
 
     # retrieve filters applied
-    filter_type = filter_ui._last_transforms.transforms[0].type.value
-    filter_operator = filter_ui._last_transforms.transforms[0].operation
-    final_transforms = {}
-
-    transforms = filter_ui._last_transforms.transforms
-    if transforms != []:
-        for transform in transforms:
-            if transform.type.value == 'filter_rows':
-                for filter in transform.where:
-                    col = filter.column_id
-                    val = filter.value
-                    final_transforms.update({col: val})
+    if filter_ui._last_transforms.transforms != []:  # transformations made or loaded
+        filter_type = filter_ui._last_transforms.transforms[0].type.value
+        filter_operator = filter_ui._last_transforms.transforms[0].operation
+        final_transforms = {}
+    
+        transforms = filter_ui._last_transforms.transforms
+        if transforms != []:
+            for transform in transforms:
+                if transform.type.value == 'filter_rows':
+                    for filter in transform.where:
+                        col = filter.column_id
+                        val = filter.value
+                        final_transforms.update({col: val})
+    else:
+        final_transforms = {}
     return (final_transforms,)
 
 
 @app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ---
+    ## <span style='color:lightcoral;font-family:arial'> Color selection
+    <span style='font-family:arial'>Choose colormaps and colors used for plotting.
+    """
+    )
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(colormap_to_hex, df, group_variable, make_categorical, mo, plt):
+
+    _, labels = make_categorical(df[group_variable[0]]).items()
+    group1, group2 = list(labels[1])
+
+    colormap_dropdn = lambda x,y: mo.ui.dropdown(label=x, options=plt.colormaps(), value=y, searchable=True)
+
+    default_colors = colormap_to_hex('tab10', 10)[:2]
+    solidcolor_input = lambda x, y: mo.ui.text(placeholder="Color name or hex code here", label=x, value=y, debounce=True)
+
+
+    group1_cmap = colormap_dropdn(f'"{group1}" colormap: ', 'viridis')
+    group1_solid = solidcolor_input(f'"{group1}" solid color: ', default_colors[0])
+    group2_cmap = colormap_dropdn(f'"{group2}" colormap: ', 'plasma')
+    group2_solid = solidcolor_input(f'"{group2}" solid color: ', default_colors[1])
+    return group1, group1_cmap, group1_solid, group2, group2_cmap, group2_solid
+
+
+@app.cell
+def _(group1_cmap, group1_solid, group2_cmap, group2_solid, mo):
+    color_choices = mo.ui.array([
+        mo.md("{g1_cmap}, {g1_solid}").batch(g1_cmap=group1_cmap, g1_solid=group1_solid),
+        mo.md("{g2_cmap}, {g2_solid}").batch(g2_cmap=group2_cmap, g2_solid=group2_solid),
+    ], label='Color selections').form()
+
+    color_choices
+    return (color_choices,)
+
+
+@app.cell
+def _(color_choices, group1, group2, mo, show_color, show_colormap):
+    if not color_choices.value:
+        group1_colors = None
+        group2_colors = None
+    else:
+        group1_colors = color_choices.value[0]
+        group2_colors = color_choices.value[1]
+
+    mo.stop(color_choices.value is None, mo.md("###<span style='font-family:arial'>No colors chosen yet"))
+    mo.output.append(
+        mo.vstack([
+            mo.md("###<span style='font-family:arial'>Color choices"),
+            mo.hstack([
+                mo.md(f"<span style='font-family:arial'>{group1}</span>"), 
+                show_colormap(group1_colors['g1_cmap']) if group1_colors else mo.md(""),
+                show_color(group1_colors['g1_solid']) if group1_colors else mo.md(""),
+            ], justify='start', align='center'),
+
+            mo.hstack([
+                mo.md(f"<span style='font-family:arial'>{group2}</span>"),
+                show_colormap(group2_colors['g2_cmap']) if group2_colors else mo.md(""),
+                show_color(group2_colors['g2_solid']) if group2_colors else mo.md(""),
+            ], justify='start', align='center')
+        ], gap=0)
+    )
+    return group1_colors, group2_colors
+
+
+@app.cell
 def _(
-    Path,
     filename,
     filepath,
     filter_ui,
     final_transforms,
-    json,
+    group1_colors,
+    group2_colors,
     mo,
-    overwrite,
-    save_path,
-    today_dt,
     var_choices,
 ):
+
+
+    # mo.stop(color_choices.value is None)
     filtered_df = filter_ui.value
 
     # update parameters output with filename and filters
@@ -719,37 +827,13 @@ def _(
         filepath=filepath,
         **var_choices,
         filters=final_transforms,
+        colors=[group1_colors, group2_colors]
     )
-
-    def save_parameters(params_output: dict, location: str | Path = None):
-        global filepath
-        global save_path
-        global overwrite
-        global today_dt
-        if location is None:
-            # by default will save where the file was found
-            location = save_path
-        assert location.exists(), f'Destination folder not found:  {location}'
-        file_out_name = f'params_{today_dt}.json'
-        file_out_path = location / file_out_name
-        if not overwrite:
-            i = 0
-            while file_out_path.exists():  # if file already exist, append numbers
-                file_out_path = location / f'params_{today_dt}_{i}.json'
-                i += 1
-
-        with mo.redirect_stdout():
-            print(f'Saving parameters to `{file_out_path}`...')
-        with open(file_out_path, 'w') as file:
-            json.dump(params_output, file, indent=4)
-        with mo.redirect_stdout():
-            print('...file saved.')
-        return file_out_path
 
     # button to save parameters
     save_params = mo.ui.run_button(label="Save parameters", kind='warn')
 
-    return filtered_df, params_output, save_parameters, save_params
+    return filtered_df, params_output, save_params
 
 
 @app.cell
@@ -757,9 +841,11 @@ def _(
     display_selections_markdown,
     mo,
     params_output,
-    save_parameters,
     save_params,
+    starting_path,
 ):
+    from oss_app.utils import save_parameters
+
     # display final selections
     mo.output.append(mo.vstack([
         display_selections_markdown(params_output),
@@ -767,7 +853,7 @@ def _(
     ]))
 
     if save_params.value:
-        _file_out_path = save_parameters(params_output)
+        _file_out_path = save_parameters(starting_path, params_output)
 
     return
 
@@ -852,59 +938,14 @@ def _(data, mo):
 
 
 @app.cell
-def _(plt):
-    plt.colormaps()
-    return
-
-
-@app.cell
-def _(mo, np, plt):
-    fig, ax = plt.subplots(figsize=(8, 1), frameon=False)
-    gradient = np.linspace(0, 1, 256)
-    gradient = np.vstack((gradient, gradient))
-    ax.imshow(gradient, aspect='auto', cmap='viridis')
-    ax.set_axis_off()
-    ax.axis('off')
-
-    mo.md(f"Here's the viridis colormap: {mo.as_html(fig)}")
-    return
-
-
-@app.cell
-def _(mo):
-    color_input = mo.ui.text(placeholder="Type colormap name here", debounce=200)
-    color_input_btn = mo.ui.run_button(label='show color')
-    return color_input, color_input_btn
-
-
-@app.cell
-def _(color_input, color_input_btn, mo, show_colormap):
-    mo.output.append(mo.hstack([color_input, color_input_btn.left()]))
-    if color_input_btn.value:
-        mo.output.append(show_colormap(color_input.value))
-    return
-
-
-@app.cell
-def _(mo):
-    def show_color(hex_code: str, label: str=""):
-        'example hex_code=#FF0000'
-        md_content = mo.md(f"""{label}: &nbsp;<span style="background-color: {hex_code}; display: inline-block; width: 20px; height: 20px; border: 1px solid black;vertical-align:middle"></span>""")
-        return  md_content
-
-    show_color('#FF5000', 'orangey')
-    return
-
-
-@app.cell
 def _(mo):
     mo.md(
         r"""
     ---
     ## <span style='color:lightcoral'> Distribution plots
-    Desc...
+    <span style='font-family:arial'>Desc... 
 
-    Click on each  <span style='border:2px solid coral;padding-right: 5px'>:arrow_down_small: plot title</span> to reveal plot.
+    Click on each <span style='border:2px solid coral;padding-right: 5px'><span>:arrow_down_small:</span> plot title</span> to reveal plot. </span>
     """
     )
     return
