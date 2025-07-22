@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Tuple
+from typing import Union, Tuple
 
 # %% Helper functions for oss_app.py notebook
 
@@ -60,11 +61,16 @@ def save_parameters(
 
 # %% Data processing helper functions
 
-def fix_name(name: str) -> str:
+def fix_name(*names: str) -> Union[str, Tuple[str, ...]]:
     """
-    Fixes a name by removing leading/trailing whitespace and converting to lowercase.
+    Fixes one or more names by removing leading/trailing whitespace and converting to lowercase.
+    If one name is passed, returns a string.
+    If multiple names are passed, returns a tuple of strings.
     """
-    return name.strip().lower()  # .replace()
+    fixed_names = [name.strip().lower() for name in names]
+    if len(fixed_names) == 1:
+        return fixed_names[0]
+    return tuple(fixed_names)
 
 
 def fix_column_names(df: pd.DataFrame, *additional_df: Tuple[pd.DataFrame, ...]):
