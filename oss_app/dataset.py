@@ -4,6 +4,7 @@ import pprint
 import os
 from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+from utils import fix_column_names
 
 
 # %% Classes
@@ -14,11 +15,25 @@ class Dataset:
     def __init__(
         self, raw_df: pd.DataFrame, prefiltered: bool = False, parameters: dict = None, properties: dict = None
     ):
-        self.raw_df = raw_df
-        self.filtered_df = None
-        self.prefiltered = prefiltered
-        self.parameters = parameters if parameters is not None else {}
-        self.properties = properties if properties is not None else {}
+        self.raw_df: pd.DataFrame = raw_df
+        self.filtered_df: pd.DataFrame | None = None
+        self.prefiltered: bool = prefiltered
+        self.parameters: dict = parameters if parameters is not None else {}
+        self.properties: dict = properties if properties is not None else {}
+
+    def __repr__(self):
+        """
+        Returns a string representation of the dataset, including its properties and parameters.
+        """
+        return pprint.pformat(
+            {
+                "properties": self.properties,
+                "parameters": self.parameters,
+                "num_rows": len(self.raw_df),
+                "num_columns": len(self.raw_df.columns),
+                "column_names": list(self.raw_df.columns),
+            }
+        )
 
     def initialize(self):
         """
@@ -29,7 +44,9 @@ class Dataset:
         self.properties["column_names"] = list(self.raw_df.columns)
 
         # Optionally filter data based on parameters if not prefiltered
-        if "filters" in self.parameters and not self.prefiltered:
+        if self.prefiltered:
+            self.filtered_df = self.raw_df.copy()
+        elif "filters" in self.parameters and not self.prefiltered:
             self.filter_data(**self.parameters["filters"])
 
         self.subject_id_variable = self.parameters.get("subject_id_variable", None)
