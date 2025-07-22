@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Union, Tuple
 from scipy.stats import norm as normf
 from sklearn import mixture
-from oss_app.dataset import Dataset
+# from oss_app.dataset import Dataset
 from scipy.stats import ks_2samp
 from sklearn import decomposition
 from matplotlib.lines import Line2D
@@ -74,10 +74,12 @@ def _split_data_by_group(
     Splits filtered dataframe into two arrays based on a grouping variable.
     """
 
-    assert isinstance(df_to_use, pd.DataFrame), "df_to_use must be a pandas DataFrame"
+    assert isinstance(
+        df_to_use, pd.DataFrame), "df_to_use must be a pandas DataFrame"
     if filters:
         query_str = " & ".join(
-            [f'`{var}`=="{val}"' if isinstance(val, str) else f"`{var}`=={val}" for var, val in filters.items()]
+            [f'`{var}`=="{val}"' if isinstance(
+                val, str) else f"`{var}`=={val}" for var, val in filters.items()]
         )
         df_to_use = df_to_use.query(query_str)
 
@@ -89,7 +91,8 @@ def _split_data_by_group(
         )
 
     comp_arr_labels = list(comp_grps.groups.keys())
-    comp_arrays = comp_grps[compvar].apply(lambda x: x.to_numpy() if isinstance(x, pd.Series) else np.array(x)).values
+    comp_arrays = comp_grps[compvar].apply(
+        lambda x: x.to_numpy() if isinstance(x, pd.Series) else np.array(x)).values
 
     return comp_arrays[0], comp_arrays[1], comp_arr_labels
 
@@ -97,7 +100,8 @@ def _split_data_by_group(
 def _calculate_distribution(data_array: np.ndarray, f_axis: np.ndarray) -> tuple[np.ndarray, dict]:
     # Fit a Gaussian Mixture Model (MLE for single Gaussian)
     f = np.ravel(data_array).astype(np.float64).reshape(-1, 1)
-    g = mixture.GaussianMixture(n_components=1, covariance_type="full", random_state=0)
+    g = mixture.GaussianMixture(
+        n_components=1, covariance_type="full", random_state=0)
     g.fit(f)
     weights, means, covars = g.weights_, g.means_, g.covariances_
 
@@ -122,10 +126,13 @@ def _calculate_intersection_and_overlap(gmm_params1: dict, gmm_params2: dict, x_
     mean1_gmm_est, std1_gmm_est = gmm_params1["mean"], gmm_params1["std"]
     mean2_gmm_est, std2_gmm_est = gmm_params2["mean"], gmm_params2["std"]
 
-    pdf_group1_normalized_for_overlap = normf.pdf(x_range, loc=mean1_gmm_est, scale=std1_gmm_est)
-    pdf_group2_normalized_for_overlap = normf.pdf(x_range, loc=mean2_gmm_est, scale=std2_gmm_est)
+    pdf_group1_normalized_for_overlap = normf.pdf(
+        x_range, loc=mean1_gmm_est, scale=std1_gmm_est)
+    pdf_group2_normalized_for_overlap = normf.pdf(
+        x_range, loc=mean2_gmm_est, scale=std2_gmm_est)
 
-    min_of_normalized_pdfs = np.minimum(pdf_group1_normalized_for_overlap, pdf_group2_normalized_for_overlap)
+    min_of_normalized_pdfs = np.minimum(
+        pdf_group1_normalized_for_overlap, pdf_group2_normalized_for_overlap)
     dx_plot = x_range[1] - x_range[0]
     # This is the [0,1] coefficient
     overlap_coefficient = np.sum(min_of_normalized_pdfs) * dx_plot
@@ -140,8 +147,10 @@ def _perform_ks_test(data_array1: np.ndarray, data_array2: np.ndarray) -> tuple[
     """
     Performs and reports the Kolmogorov-Smirnov test between two groups.
     """
-    ks_stat, ks_pval = ks_2samp(data_array1.reshape(-1), data_array2.reshape(-1))
-    print(f"\t--Kolmogorov-Smirnov test between groups: {ks_stat:.2f},  p-val: {ks_pval:.5f}")
+    ks_stat, ks_pval = ks_2samp(
+        data_array1.reshape(-1), data_array2.reshape(-1))
+    print(
+        f"\t--Kolmogorov-Smirnov test between groups: {ks_stat:.2f},  p-val: {ks_pval:.5f}")
     return ks_stat, ks_pval
 
 
@@ -206,7 +215,8 @@ def compare_dists_altair(
     assert group_variable != "", 'no grouping variable for "group_variable" chosen'
 
     # 1. Split data into two groups
-    array1, array2, comp_arr_labels = _split_data_by_group(df, compare_metric, group_variable, filters)
+    array1, array2, comp_arr_labels = _split_data_by_group(
+        df, compare_metric, group_variable, filters)
 
     plot_title = f"{compare_metric=},  {group_variable=}"
 
@@ -239,11 +249,14 @@ def compare_dists_altair(
     mean2_gmm_est = gmm_params_group2["mean"]
     std2_gmm_est = gmm_params_group2["std"]
 
-    print(f"GMM Group 1 Estimates: Mean={mean1_gmm_est:.2f}, Std={std1_gmm_est:.2f}")
-    print(f"GMM Group 2 Estimates: Mean={mean2_gmm_est:.2f}, Std={std2_gmm_est:.2f}")
+    print(
+        f"GMM Group 1 Estimates: Mean={mean1_gmm_est:.2f}, Std={std1_gmm_est:.2f}")
+    print(
+        f"GMM Group 2 Estimates: Mean={mean2_gmm_est:.2f}, Std={std2_gmm_est:.2f}")
 
     # 3. Calculate intersection and overlap coefficient
-    overlap_coeff, overlap_pct = _calculate_intersection_and_overlap(gmm_params_group1, gmm_params_group2, x_plot_range)
+    overlap_coeff, overlap_pct = _calculate_intersection_and_overlap(
+        gmm_params_group1, gmm_params_group2, x_plot_range)
 
     # 4. Perform and report Kolmogorov-Smirnov test
     ks_stat, ks_pval = _perform_ks_test(array1, array2)
@@ -251,13 +264,16 @@ def compare_dists_altair(
     # --- Altair Charting ---
     # Prepare data for Altair DataFrame
     _user_colors = user_colors if user_colors else ("#e45756", "#4c78a8")
-    _lgnd_labels = user_labels if user_labels is not None else [str(lbl) for lbl in comp_arr_labels]
+    _lgnd_labels = user_labels if user_labels is not None else [
+        str(lbl) for lbl in comp_arr_labels]
 
     data_dist_list = []
     for val_x, val_y in zip(x_plot_range, dist_freq_group1):
-        data_dist_list.append({"f_axis": val_x, "dist_val": val_y, "group": _lgnd_labels[0], "alpha_val": alpha1})
+        data_dist_list.append(
+            {"f_axis": val_x, "dist_val": val_y, "group": _lgnd_labels[0], "alpha_val": alpha1})
     for val_x, val_y in zip(x_plot_range, dist_freq_group2):
-        data_dist_list.append({"f_axis": val_x, "dist_val": val_y, "group": _lgnd_labels[1], "alpha_val": alpha2})
+        data_dist_list.append(
+            {"f_axis": val_x, "dist_val": val_y, "group": _lgnd_labels[1], "alpha_val": alpha2})
     source_dist = pd.DataFrame(data_dist_list)
 
     # Base chart properties
@@ -274,7 +290,8 @@ def compare_dists_altair(
             strokeWidth=0,
         )
         .encode(
-            x=alt.X("f_axis:Q", title=f"Var: {compare_metric}", scale=alt.Scale(domain=rangex, nice=False, zero=False)),
+            x=alt.X("f_axis:Q", title=f"Var: {compare_metric}", scale=alt.Scale(
+                domain=rangex, nice=False, zero=False)),
             y=alt.Y(
                 "dist_val:Q",
                 title="% Subjects",
@@ -391,7 +408,7 @@ def do_pca(data: pd.DataFrame, n_comp=3):
 
 
 def pca_biplot(
-    dataset_obj: Dataset,
+    dataset_obj,
     df_to_use=pd.DataFrame() | str | None,
     grouping_variable="",
     metrics_inluded: list[str] | None = None,
@@ -403,16 +420,17 @@ def pca_biplot(
     hide_text=False,
     **scatter_kwargs,
 ):
-    assert isinstance(dataset_obj, Dataset), "dataset_obj must be an instance of Dataset class."
     df: pd.DataFrame = pd.DataFrame()
 
     # Data prep
     assert not df_to_use.empty, "Dataset object's input DataFrame `df_to_use` cannot be empty."
     if isinstance(df_to_use, str):
-        assert getattr(dataset_obj, df_to_use, None) is not None, f"Dataset object has no dataset `{df_to_use}`."
+        assert getattr(dataset_obj, df_to_use,
+                       None) is not None, f"Dataset object has no dataset `{df_to_use}`."
         df = getattr(dataset_obj, df_to_use)
     elif df_to_use is None:
-        assert getattr(dataset_obj, "scaled_df", None) is not None, "Default dataset `scaled_df` not found."
+        assert getattr(dataset_obj, "scaled_df",
+                       None) is not None, "Default dataset `scaled_df` not found."
         df = getattr(dataset_obj, "scaled_df")
     else:
         df = df_to_use
@@ -421,8 +439,10 @@ def pca_biplot(
         metrics_inluded = dataset_obj.metric_variables
     metric_labels = metrics_inluded
 
-    assert not (df.empty or df is None), "Dataset object's input DataFrame `df` cannot be None."
-    df = df[metrics_inluded].copy()  # type: ignore # copy to avoid modifying original DataFrame
+    assert not (
+        df.empty or df is None), "Dataset object's input DataFrame `df` cannot be None."
+    # type: ignore # copy to avoid modifying original DataFrame
+    df = df[metrics_inluded].copy()
 
     if not grouping_variable:
         grouping_variable = dataset_obj.grouping_variable
@@ -463,13 +483,14 @@ def pca_biplot(
     # set up legend entries
     leg_markers = [*map(stylemap.get, np.unique(group_categories["codes"]))]
     legend_handles = [
-        Line2D([], [], marker=m, markeredgecolor="k", markeredgewidth=1.5, markerfacecolor="w", linewidth=0)
+        Line2D([], [], marker=m, markeredgecolor="k",
+               markeredgewidth=1.5, markerfacecolor="w", linewidth=0)
         for m in leg_markers
     ]
 
     # Plotting, per set of PCs given, only one if `pcs` not None
     for pcset in pcset_to_plot:
-        coeff = np.transpose(pca.components_[pcset[0] : pcset[1] + 1])
+        coeff = np.transpose(pca.components_[pcset[0]: pcset[1] + 1])
         xs = princomps[:, pcset[0]]
         ys = princomps[:, pcset[1]]
         n = coeff.shape[0]
@@ -482,7 +503,8 @@ def pca_biplot(
         # plt.scatter(xs * scalex, ys * scaley, c=mapping, cmap=ncmap, s=25, edgecolors='face',
         #             marker=conds_stylemap, size=conds_sizemap, zorder=2)
         for _st, _si, _c, _x, _y in zip(conds_stylemap, conds_sizemap, mapping, xs, ys):
-            fs = plt.scatter(_x * scalex, _y * scaley, color=_c, cmap=ncmap, s=_si, marker=_st, **kwargs)
+            fs = plt.scatter(_x * scalex, _y * scaley, color=_c,
+                             cmap=ncmap, s=_si, marker=_st, **kwargs)
         for i in range(n):
             if not hide_text:
                 match labels:
@@ -497,7 +519,8 @@ def pca_biplot(
                             va="center",
                         )
                     case "ordered":
-                        plt.text(coeff[i, 0] * 1.15, coeff[i, 1] * 1.0, str(i), color="k", ha="center", va="center")
+                        plt.text(coeff[i, 0] * 1.15, coeff[i, 1] * 1.0,
+                                 str(i), color="k", ha="center", va="center")
                     case "":
                         pass
             # arc_direction_list = iter(["-", "", "-", "-", "-"])
@@ -544,8 +567,10 @@ def pca_biplot(
             plt.title(None)
             plt.grid(visible=False)
             # single grid line instead
-            ax.axhline(0, linestyle=":", color="xkcd:gray", zorder=1)  # horizontal lines
-            ax.axvline(0, linestyle=":", color="xkcd:gray", zorder=1)  # vertical lines
+            ax.axhline(0, linestyle=":", color="xkcd:gray",
+                       zorder=1)  # horizontal lines
+            ax.axvline(0, linestyle=":", color="xkcd:gray",
+                       zorder=1)  # vertical lines
         else:
             labels = list(group_categories["labels"])
             handles = legend_handles
