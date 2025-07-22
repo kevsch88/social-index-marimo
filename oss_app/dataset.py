@@ -4,7 +4,7 @@ import pprint
 import os
 from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
-from oss_app.utils import fix_column_names, mo_print
+from oss_app.utils import fix_name, fix_column_names, mo_print
 
 
 # %% Classes
@@ -17,6 +17,7 @@ class Dataset:
     ):
         self.raw_df: pd.DataFrame = raw_df
         self.filtered_df: pd.DataFrame | None = None
+        self.scaled_df: pd.DataFrame | None = None
         self.prefiltered: bool = prefiltered
         self.parameters: dict = parameters if parameters is not None else {}
         self.properties: dict = properties if properties is not None else {}
@@ -49,19 +50,20 @@ class Dataset:
         elif "filters" in self.parameters and not self.prefiltered:
             self.filter_data(**self.parameters["filters"])
 
-        self.subject_id_variable = self.parameters.get("subject_id_variable", None)
-        self.sex_variable = self.parameters.get("sex_variable", None)
-        self.grouping_variable = self.parameters.get("grouping_variable", None)
-        self.extra_index_variables = self.parameters.get("index_variables", [])
+        # add parameters with fixed labels
+        self.subject_id_variable = fix_name(self.parameters.get("subject_id_variable", None))
+        self.sex_variable = fix_name(self.parameters.get("sex_variable", None))
+        self.grouping_variable = fix_name(self.parameters.get("grouping_variable", None))
+        self.extra_index_variables = fix_name(*self.parameters.get("index_variables", []))
         if not self.parameters.get("indices", None):
             self.indices = [
-                self.subject_id_variable,
-                self.sex_variable,
-                self.grouping_variable,
-            ] + self.extra_index_variables
+                [self.subject_id_variable],
+                [self.sex_variable],
+                [self.grouping_variable],
+            ] + [*self.extra_index_variables]  # type: ignore
         else:
-            self.indices = self.parameters["indices"]
-        self.metric_variables = self.parameters.get("metric_variables", [])
+            self.indices = fix_name(*self.parameters["indices"])
+        self.metric_variables = [*fix_name(*self.parameters.get("metric_variables", []))]
         assert self.metric_variables, "No metric variables specified in parameters."
 
         # Fix column names for consistency
@@ -181,7 +183,6 @@ class Dataset:
 
         # Determine which dataframe to use as the source
         source_df = self.filtered_df if self.filtered_df is not None else self.raw_df
-
         if source_df is None or source_df.empty:
             mo_print("No data available for scaling.")
             self.scaled_df = None
@@ -189,17 +190,17 @@ class Dataset:
 
         df_copy = source_df.copy()
         metrics_to_scale = self.metric_variables
-        scaled_cols = [f"{col}_scaled" for col in metrics_to_scale]
+        # scaled_cols = [f"{col}_scaled" for col in metrics_to_scale]
 
         if per_group and self.grouping_variable:
             # Scale within each group
             grouped = df_copy.groupby(self.grouping_variable, group_keys=False)
-            df_copy[scaled_cols] = grouped[metrics_to_scale].apply(
+            df_copy[metrics_to_scale] = grouped[metrics_to_scale].apply(
                 lambda x: Scaler().fit_transform(x) if not x.empty else x
             )
         else:
             # Scale across the entire dataframe
-            df_copy[scaled_cols] = Scaler().fit_transform(df_copy[metrics_to_scale])
+            df_copy[metrics_to_scale] = Scaler().fit_transform(df_copy[metrics_to_scale])
 
         self.scaled_df = df_copy
 
@@ -216,18 +217,17 @@ class Dataset:
                                              If None, uses all columns in `self.metric_variables`
                                              that end with '_scaled'.
         """
+        if not metrics_to_use:
+            metrics_to_use = [col for col in self.metric_variables if col != "si_score"]
 
         def apply_si(df):
-            if df is None:
-                return None
+            assert df is not None, "DataFrame cannot be None."
 
             df_copy = df.copy()
             if metrics_to_use is None:
-                cols = [col for col in self.metric_variables if col.endswith("_scaled")]
+                cols = [col for col in self.metric_variables]
                 if not cols:
-                    cols = [
-                        col for col in df_copy.columns if col.endswith("_scaled") and col not in self.metric_variables
-                    ]
+                    cols = [col for col in df_copy.columns if col not in self.metric_variables]
             else:
                 cols = metrics_to_use
 
@@ -238,9 +238,13 @@ class Dataset:
             df_copy[new_col_name] = df_copy[cols].sum(axis=1)
             return df_copy
 
-        self.raw_df = apply_si(self.raw_df)
-        if self.filtered_df is not None:
-            self.filtered_df = apply_si(self.filtered_df)
+        assert self.scaled_df is not None
+        self.scaled_df = apply_si(
+            self.scaled_df,
+        )
+        self.raw_df[new_col_name] = self.scaled_df[new_col_name]
+        assert self.filtered_df is not None
+        self.filtered_df[new_col_name] = self.scaled_df[new_col_name]
 
         if new_col_name not in self.metric_variables:
             self.metric_variables.append(new_col_name)
