@@ -43,8 +43,9 @@ def save_parameters(
     elif not isinstance(location, Path):
         location = Path(location)
 
-    assert location.exists(), f"Destination folder not found:  {location}"
-    assert location.is_dir(), f"Destination is not a folder: {location}"
+    if not location.exists():
+        location.mkdir(parents=True, exist_ok=True)
+        mo_print(f"Created directory: {location}")
 
     if not date_string:
         date_string = today_date(time_included=False)
