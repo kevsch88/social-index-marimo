@@ -59,6 +59,21 @@ def save_parameters(
 
 # %% Data processing helper functions
 
+def fix_name(name: str) -> str:
+    """
+    Fixes a name by removing leading/trailing whitespace and converting to lowercase.
+    """
+    return name.strip().lower()  # .replace()
+
+
+def fix_column_names(df: pd.DataFrame, *additional_df: pd.DataFrame):
+    """
+    Fix column names by removing leading/trailing whitespace and converting to lowercase.
+    """
+    df.columns = [fix_name(col) for col in df.columns]
+    for additional in additional_df:
+        additional.columns = [fix_name(col) for col in additional.columns]
+
 
 def make_categorical(series: pd.Series) -> dict:
     """
