@@ -4,7 +4,7 @@ import pprint
 import os
 from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
-from utils import fix_column_names
+from oss_app.utils import fix_column_names
 
 
 # %% Classes
@@ -80,9 +80,7 @@ class Dataset:
         """
         Fix column names by removing leading/trailing whitespace and converting to lowercase.
         """
-        self.raw_df.columns = [col.strip().lower() for col in self.raw_df.columns]
-        if self.filtered_df is not None:
-            self.filtered_df.columns = [col.strip().lower() for col in self.filtered_df.columns]
+        fix_column_names(self.raw_df, self.filtered_df)
 
     def define_new_group(self, new_col_name: str, existing_cols: list):
         """
