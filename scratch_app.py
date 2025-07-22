@@ -852,6 +852,51 @@ def _(data, mo):
 
 
 @app.cell
+def _(plt):
+    plt.colormaps()
+    return
+
+
+@app.cell
+def _(mo, np, plt):
+    fig, ax = plt.subplots(figsize=(8, 1), frameon=False)
+    gradient = np.linspace(0, 1, 256)
+    gradient = np.vstack((gradient, gradient))
+    ax.imshow(gradient, aspect='auto', cmap='viridis')
+    ax.set_axis_off()
+    ax.axis('off')
+
+    mo.md(f"Here's the viridis colormap: {mo.as_html(fig)}")
+    return
+
+
+@app.cell
+def _(mo):
+    color_input = mo.ui.text(placeholder="Type colormap name here", debounce=200)
+    color_input_btn = mo.ui.run_button(label='show color')
+    return color_input, color_input_btn
+
+
+@app.cell
+def _(color_input, color_input_btn, mo, show_colormap):
+    mo.output.append(mo.hstack([color_input, color_input_btn.left()]))
+    if color_input_btn.value:
+        mo.output.append(show_colormap(color_input.value))
+    return
+
+
+@app.cell
+def _(mo):
+    def show_color(hex_code: str, label: str=""):
+        'example hex_code=#FF0000'
+        md_content = mo.md(f"""{label}: &nbsp;<span style="background-color: {hex_code}; display: inline-block; width: 20px; height: 20px; border: 1px solid black;vertical-align:middle"></span>""")
+        return  md_content
+
+    show_color('#FF5000', 'orangey')
+    return
+
+
+@app.cell
 def _(mo):
     mo.md(
         r"""
@@ -1130,83 +1175,6 @@ def _(
             'distplots.png'  # TODO: change label
         with mo.redirect_stdout():
             save_plot(final_chart, dist_plots_filepath)
-    return
-
-
-@app.cell
-def _(plt):
-
-    plt.colormaps()
-    return
-
-
-@app.cell
-def _(mo, np, plt):
-    fig, ax = plt.subplots(figsize=(8, 1), frameon=False)
-    gradient = np.linspace(0, 1, 256)
-    gradient = np.vstack((gradient, gradient))
-    ax.imshow(gradient, aspect='auto', cmap='viridis')
-    ax.set_axis_off()
-    ax.axis('off')
-
-    mo.md(f"Here's the viridis colormap: {mo.as_html(fig)}")
-    return
-
-
-@app.cell
-def _(mo, np, plt):
-    from typing import Tuple, Union
-    from matplotlib.colors import ListedColormap
-    def show_colormap(cmap: Union[str, ListedColormap], label: str = "", figsize: Tuple[float, float] = (1.25, 0.25)):
-        """
-        Displays a matplotlib colormap in a marimo cell.
-
-        Args:
-            cmap: The colormap to display. Can be a string name or a Colormap object.
-            label: An optional label to display above the colormap.
-            figsize: The size of the figure for the colormap display.
-        """
-        fig, ax = plt.subplots(figsize=figsize, frameon=False)
-        gradient = np.linspace(0, 1, 256)
-        gradient = np.vstack((gradient, gradient))
-        ax.imshow(gradient, aspect="auto", cmap=cmap)
-        ax.set_axis_off()
-    
-
-        fig_md = mo.as_html(fig)
-        md_content = f"{label}{fig_md}" if label else f"{fig_md}"
-        plt.close(fig)  # Prevent double-plotting in some environments
-        return mo.md(md_content)
-    show_colormap('viridis', 'this is viridis:')
-    return (show_colormap,)
-
-
-@app.cell
-def _(mo):
-    color_input = mo.ui.text(placeholder="Type colormap name here", debounce=200)
-    color_input_btn = mo.ui.run_button(label='show color')
-    return color_input, color_input_btn
-
-
-@app.cell
-def _(color_input, color_input_btn, mo, show_colormap):
-
-    mo.output.append(mo.hstack([color_input, color_input_btn.left()]))
-    if color_input_btn.value:
-        mo.output.append(show_colormap(color_input.value))
-    
-
-    return
-
-
-@app.cell
-def _(mo):
-    def show_color(hex_code: str, label: str=""):
-        'example hex_code=#FF0000'
-        md_content = mo.md(f"""{label}: &nbsp;<span style="background-color: {hex_code}; display: inline-block; width: 20px; height: 20px; border: 1px solid black;vertical-align:middle"></span>""")
-        return  md_content
-
-    show_color('#FF5000', 'orangey')
     return
 
 
