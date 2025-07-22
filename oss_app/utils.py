@@ -3,6 +3,7 @@ import pandas as pd
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Tuple
 
 # %% Helper functions for oss_app.py notebook
 
@@ -66,7 +67,7 @@ def fix_name(name: str) -> str:
     return name.strip().lower()  # .replace()
 
 
-def fix_column_names(df: pd.DataFrame, *additional_df: pd.DataFrame):
+def fix_column_names(df: pd.DataFrame, *additional_df: Tuple[pd.DataFrame, ...]):
     """
     Fix column names by removing leading/trailing whitespace and converting to lowercase.
     """
