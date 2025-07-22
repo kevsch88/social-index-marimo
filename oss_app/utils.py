@@ -3,14 +3,16 @@ import pandas as pd
 import altair as alt
 import numpy as np
 import json
+import matplotlib.pyplot as plt
 from pathlib import Path
 from datetime import datetime
-from typing import Tuple
 from typing import Union, Tuple
 from scipy.stats import norm as normf
 from sklearn import mixture
 from oss_app.dataset import Dataset
 from scipy.stats import ks_2samp
+from sklearn import decomposition
+from matplotlib.lines import Line2D
 
 # %% Helper functions for oss_app.py notebook
 
@@ -63,6 +65,7 @@ def save_parameters(
 
 
 # %% Plotting helper functions
+
 
 def _split_data_by_group(
     df_to_use: pd.DataFrame, compvar: str, groupvar: str, filters: dict
@@ -303,7 +306,7 @@ def compare_dists_altair(
             anchor="middle",
             offset=10,
         ),
-    )  # .configure_view(strokeWidth=0)
+    )
 
     if hide_text:
         chart = chart.configure_axis(labels=False, title=None, ticks=False, grid=False).properties(
@@ -316,6 +319,7 @@ def compare_dists_altair(
 
 
 # %% Data processing helper functions
+
 
 def fix_name(*names: str) -> Union[str, Tuple[str, ...]]:
     """
@@ -351,6 +355,210 @@ def make_categorical(series: pd.Series) -> dict:
     """
     categorical_series = pd.Categorical(series)
     return {"codes": categorical_series.codes, "labels": categorical_series.categories}
+
+
+def do_pca(data: pd.DataFrame, n_comp=3):
+    """Performs Principal Component Analysis (PCA) on the provided dataset.
+
+    This function wraps `sklearn.decomposition.PCA` to simplify the process of
+    dimensionality reduction. It fits the PCA model to the data, transforms the
+    data into the principal component space, and returns the fitted model along
+    with the results.
+
+    Args:
+        data (pd.DataFrame): A DataFrame containing the scaled numerical data
+            (features) to be analyzed. The shape should be (n_samples, n_features).
+        n_comp (int, float, optional): The number of principal components to keep.
+            - If an integer, it's the absolute number of components.
+            - If a float between 0.0 and 1.0 (e.g., 0.95), it's the amount of
+              variance that should be explained by the selected components.
+            Defaults to 3.
+
+    Returns:
+        tuple: A tuple containing the following three elements:
+            - pca (sklearn.decomposition.PCA): The fitted PCA object from scikit-learn.
+              This object can be used for further analysis or inverse transformations.
+            - principal_components (np.ndarray): An array of shape
+              (n_samples, n_components) representing the data transformed into the
+              principal component space.
+            - pc_evr (np.ndarray): An array containing the percentage of variance
+              explained by each of the selected components.
+    """
+    pca = decomposition.PCA(n_components=n_comp)
+    principal_components = pca.fit_transform(data)
+    pc_evr = pca.explained_variance_ratio_
+    return pca, principal_components, pc_evr
+
+
+def pca_biplot(
+    dataset_obj: Dataset,
+    df_to_use=pd.DataFrame() | str | None,
+    grouping_variable="",
+    metrics_inluded: list[str] | None = None,
+    labels="",
+    n_comp=3,
+    mapping=0,
+    pcs=None,
+    colmap=None,
+    hide_text=False,
+    **scatter_kwargs,
+):
+    assert isinstance(dataset_obj, Dataset), "dataset_obj must be an instance of Dataset class."
+    df: pd.DataFrame = pd.DataFrame()
+
+    # Data prep
+    assert not df_to_use.empty, "Dataset object's input DataFrame `df_to_use` cannot be empty."
+    if isinstance(df_to_use, str):
+        assert getattr(dataset_obj, df_to_use, None) is not None, f"Dataset object has no dataset `{df_to_use}`."
+        df = getattr(dataset_obj, df_to_use)
+    elif df_to_use is None:
+        assert getattr(dataset_obj, "scaled_df", None) is not None, "Default dataset `scaled_df` not found."
+        df = getattr(dataset_obj, "scaled_df")
+    else:
+        df = df_to_use
+    if not metrics_inluded:
+        # metrics_inluded = [col for col in dataset_obj.metric_variables if col != "si_score"]
+        metrics_inluded = dataset_obj.metric_variables
+    metric_labels = metrics_inluded
+
+    assert not (df.empty or df is None), "Dataset object's input DataFrame `df` cannot be None."
+    df = df[metrics_inluded].copy()  # type: ignore # copy to avoid modifying original DataFrame
+
+    if not grouping_variable:
+        grouping_variable = dataset_obj.grouping_variable
+    group_categories = make_categorical(df[grouping_variable])
+
+    # PCA
+    pca, princomps, pc_evr = do_pca(df, n_comp)
+    if not getattr(dataset_obj, "pca", None):
+        dataset_obj.pca = do_pca(df, n_comp)
+    if pcs is None:
+        pc_range = range(n_comp)
+        pcset_to_plot = [[x, y] for x, y in zip(pc_range[0:-1], pc_range[1:])]
+    else:
+        pcset_to_plot = [pcs]
+
+    # Plotting setup
+    x_index = group_categories["codes"]
+    stylemap = {0: "v", 1: "o"}  # marker style for groups
+    sizemap = {0: 70, 1: 60}  # marker size for groups
+    conds_stylemap = [*map(stylemap.get, x_index)]
+    conds_sizemap = [*map(sizemap.get, x_index)]
+    if colmap is None:
+        match not dataset_obj.plot_colors:
+            case False:
+                colmap = dataset_obj.plot_colors[0].new_cmap
+            case _:
+                dataset_obj.map_colors(dataset_obj.si_scores)
+                colmap = dataset_obj.plot_colors[0].new_cmap
+    mapping = dataset_obj.plot_colors[0].face_colors
+
+    kwargs = dict(  # scatter parameters
+        edgecolors="face",
+        lw=0.5,
+        zorder=2,
+    )
+    kwargs.update(scatter_kwargs)  # update kwargs with user parameters
+
+    # set up legend entries
+    leg_markers = [*map(stylemap.get, np.unique(group_categories["codes"]))]
+    legend_handles = [
+        Line2D([], [], marker=m, markeredgecolor="k", markeredgewidth=1.5, markerfacecolor="w", linewidth=0)
+        for m in leg_markers
+    ]
+
+    # Plotting, per set of PCs given, only one if `pcs` not None
+    for pcset in pcset_to_plot:
+        coeff = np.transpose(pca.components_[pcset[0] : pcset[1] + 1])
+        xs = princomps[:, pcset[0]]
+        ys = princomps[:, pcset[1]]
+        n = coeff.shape[0]
+        scalex = 1.0 / (xs.max() - xs.min())
+        scaley = 1.0 / (ys.max() - ys.min())
+        # pdb.set_trace()
+        ncmap = colmap
+
+        plt.figure(figsize=(3, 3))
+        # plt.scatter(xs * scalex, ys * scaley, c=mapping, cmap=ncmap, s=25, edgecolors='face',
+        #             marker=conds_stylemap, size=conds_sizemap, zorder=2)
+        for _st, _si, _c, _x, _y in zip(conds_stylemap, conds_sizemap, mapping, xs, ys):
+            fs = plt.scatter(_x * scalex, _y * scaley, color=_c, cmap=ncmap, s=_si, marker=_st, **kwargs)
+        for i in range(n):
+            if not hide_text:
+                match labels:
+                    case "labeled":
+                        # plt.text(coeff[i, 0] * 1.15, coeff[i, 1] * 1.15, f'{var_labels[i]}',
+                        plt.text(
+                            coeff[i, 0] + 0.1,
+                            coeff[i, 1],
+                            f"{metric_labels[i]}",
+                            color="darkgreen",
+                            ha="left",
+                            va="center",
+                        )
+                    case "ordered":
+                        plt.text(coeff[i, 0] * 1.15, coeff[i, 1] * 1.0, str(i), color="k", ha="center", va="center")
+                    case "":
+                        pass
+            # arc_direction_list = iter(["-", "", "-", "-", "-"])
+            plt.annotate(
+                "",
+                xy=(coeff[i, 0], coeff[i, 1]),
+                xytext=(0, 0),  # color='crimson'
+                arrowprops=dict(
+                    arrowstyle="-|>",
+                    shrinkA=0,
+                    fill=True,
+                    color="xkcd:coral",
+                    mutation_scale=12,
+                    lw=1.5,
+                    #  connectionstyle= f'arc3,rad={next(arc_direction_list)}0.1',
+                ),
+                zorder=3,
+            )
+
+        plt.grid(zorder=1)
+        plt.xlim(-1.2, 1.2)
+        plt.xticks([-1, 0, 1])
+        plt.ylim(-1.2, 1.2)
+        plt.yticks([-1, 0, 1])
+        # plt.xlim(lims:=(-.9, .9))
+        # plt.xlim(lims:=(-.92, .92))
+        # plt.xticks(ticklims:=[-0.5, 0, 0.5])
+        # plt.ylim(lims)
+        # plt.yticks(ticklims)
+        plt.xlabel(f"PC{pcset[0] + 1}")
+        plt.ylabel(f"PC{pcset[1] + 1}")
+        plt.title(
+            f"Explained variance ratio: \nPC{pcset[0] + 1}: {pc_evr[pcset[0]]:.2f},  PC{pcset[1] + 1}: {pc_evr[pcset[1]]:.2f} \nCombined:{sum(pc_evr[pcset]):.2f}"
+        )
+        if hide_text:
+            # Hide X and Y axes label marks
+            ax = plt.gca()
+            plt.xlim(lims := (-0.92, 0.92))
+            plt.ylim(lims)
+            ax.xaxis.set_tick_params(labelbottom=False)
+            ax.yaxis.set_tick_params(labelleft=False)
+            plt.xlabel(None)
+            plt.ylabel(None)
+            plt.title(None)
+            plt.grid(visible=False)
+            # single grid line instead
+            ax.axhline(0, linestyle=":", color="xkcd:gray", zorder=1)  # horizontal lines
+            ax.axvline(0, linestyle=":", color="xkcd:gray", zorder=1)  # vertical lines
+        else:
+            labels = list(group_categories["labels"])
+            handles = legend_handles
+            ax = plt.gca()
+            ax.legend(
+                handles,
+                labels,
+                loc="upper right",
+                fontsize=8,
+                bbox_to_anchor=(1.5, 1),
+                frameon=False,
+                markerscale=1.5,
+            )
 
 
 # TODO: Logging helper functions
