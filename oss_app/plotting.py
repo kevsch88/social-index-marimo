@@ -30,19 +30,24 @@ def map_colors(self, data_array: np.ndarray = [], color_set=["viridis_r", "plasm
         case 2:  # 2 sexes present
             # default colors for male and female animals
             plot_colors = []
-            self.c_debug(f"using {self.cset} as color sets for 2 groups (default:sexes)")
+            self.c_debug(
+                f"using {self.cset} as color sets for 2 groups (default:sexes)")
             for i, cset in enumerate(self.cset):
-                plot_colors.append(CmapSet(cset, data_array, cmap_range=cmap_rng))
+                plot_colors.append(
+                    CmapSet(cset, data_array, cmap_range=cmap_rng))
         # only males present
         case 1 if "Male".casefold() in self.df["Sex"].values:
-            plot_colors = CmapSet(self.cset[0], data_array, cmap_range=cmap_rng)
+            plot_colors = CmapSet(
+                self.cset[0], data_array, cmap_range=cmap_rng)
             self.c_debug(f"using {self.cset[0]} as color set for males")
         # only females present
         case 1 if "Female".casefold() in self.df["Sex"].values:
-            plot_colors = CmapSet(self.cset[1], data_array, cmap_range=cmap_rng)
+            plot_colors = CmapSet(
+                self.cset[1], data_array, cmap_range=cmap_rng)
             self.c_debug(f"using {self.cset[1]} as color set for females")
         case _:  # default to plasma cmap in any other case
-            plot_colors = CmapSet(self.cset[0], data_array, cmap_range=cmap_rng)
+            plot_colors = CmapSet(
+                self.cset[0], data_array, cmap_range=cmap_rng)
             self.c_debug(f"using {self.cset[1]} as default color set")
 
     self.plot_colors = plot_colors
@@ -69,7 +74,8 @@ def blend_cmap(self, name, split=True, cmap_rng: tuple[float, float] = None, col
     if not cmap_rng:
         cmap_rng = (0, 1)
     if split:
-        newcolors = np.vstack((top(np.linspace(0, 0.5, 1024)), bottom(np.linspace(0.5, 1, 1024))))
+        newcolors = np.vstack(
+            (top(np.linspace(0, 0.5, 1024)), bottom(np.linspace(0.5, 1, 1024))))
     else:
         newcolors = np.vstack(
             (
@@ -83,7 +89,7 @@ def blend_cmap(self, name, split=True, cmap_rng: tuple[float, float] = None, col
     self.blended_cmap = blended_cmap
 
 
-def show_colormap(cmap: Union[str, ListedColormap], label: str = "", figsize: Tuple[float, float] = (1.25, 0.25)):
+def show_colormap(cmap: Union[str, ListedColormap], label: str = "", figsize: Tuple[float, float] = (1.25, 0.25), font_family: str = "arial"):
     """Displays a visual representation of a Matplotlib colormap within a Marimo cell.
     This function generates a horizontal color bar for the given colormap and
     embeds it as an HTML object in a Marimo markdown cell, making it easy to
@@ -104,13 +110,20 @@ def show_colormap(cmap: Union[str, ListedColormap], label: str = "", figsize: Tu
     ax.imshow(gradient, aspect="auto", cmap=cmap)
     ax.set_axis_off()
 
-    fig_md = mo.as_html(fig)
-    md_content = f"{label}{fig_md}" if label else f"{fig_md}"
+    fig_html = mo.as_html(fig)
+    # md_content = f"{label}{fig_md}" if label else f"{fig_md}"
     plt.close(fig)  # Prevent double-plotting in some environments
-    return mo.md(md_content)
+    if label:
+        # Create a marimo markdown object for the label
+        label_md = mo.md(
+            f"<span style='font-family:{font_family}'>{label}</span>")
+        # Use hstack to place them side by side
+        return mo.hstack([label_md, fig_html])
+    else:
+        return fig_html
 
 
-def show_color(hex_code: str, label: str = ""):
+def show_color(color: str, label: str = "", font_family: str = "arial") -> mo.md:
     """Generates a Marimo markdown object to display a color swatch.
 
     This function creates a small, colored square using HTML and CSS,
@@ -118,7 +131,7 @@ def show_color(hex_code: str, label: str = ""):
     colors directly within a Marimo notebook.
 
     Args:
-        hex_code (str): The hexadecimal color code to display (e.g., "#FF0000").
+        color (str): The name or hexadecimal color code to display (e.g., "#FF0000").
         label (str, optional): A text label to show next to the color swatch.
             Defaults to an empty string.
 
@@ -128,6 +141,25 @@ def show_color(hex_code: str, label: str = ""):
     """
     "example hex_code=#FF0000"
     md_content = mo.md(
-        f"""{label}: &nbsp;<span style="background-color: {hex_code}; display: inline-block; width: 20px; height: 20px; border: 1px solid black;vertical-align:middle"></span>"""
+        f"""<span style='font-family:{font_family}'>{label}</span>&nbsp;<span style="background-color: {color}; display: inline-block; width: 20px; height: 20px; border: 1px solid black;vertical-align:middle"></span>"""
     )
-    return md_content
+    return md_content.style({'font-family': 'sans-serif'})
+
+
+def colormap_to_hex(cmap: Union[str, ListedColormap], num_colors: int = 10) -> list[str]:
+    """Converts a Matplotlib colormap to a list of hexadecimal color codes.
+
+    Args:
+        cmap (Union[str, ListedColormap]): The colormap to convert. This can be
+            the name of a registered colormap (e.g., "viridis") or a
+            `matplotlib.colors.Colormap` object.
+        num_colors (int): The number of colors to extract from the colormap.
+            Defaults to 10.
+
+    Returns:
+        list[str]: A list of hexadecimal color codes representing the
+            specified number of colors from the colormap.
+    """
+    if isinstance(cmap, str):
+        cmap = cm.get_cmap(cmap)
+    return [colors.rgb2hex(cmap(i)) for i in np.linspace(0, 1, num_colors)]
