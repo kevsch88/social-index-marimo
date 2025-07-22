@@ -4,7 +4,7 @@ import pprint
 import os
 from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
-from oss_app.utils import fix_column_names
+from oss_app.utils import fix_column_names, mo_print
 
 
 # %% Classes
@@ -150,12 +150,14 @@ class Dataset:
         if new_col_name not in self.metric_variables:
             self.metric_variables.append(new_col_name)
 
-    def scale_metrics(self, scaletype: str = "robust", per_group: bool = True):
+    def scale_metrics(self, scaletype: str = "robust", per_group: bool = True) -> pd.DataFrame:
         """
-        Scales the metric variables in the dataset.
+        Scales the metric variables and returns a new DataFrame with scaled columns.
 
-        This method applies scaling to the metric variables in both raw_df and filtered_df.
+        This method applies scaling to the metric variables and returns a new DataFrame
+        containing the scaled data. The original dataframes (raw_df, filtered_df) are not modified.
         The scaled data is stored in new columns with a '_scaled' suffix.
+        It operates on `filtered_df` if it exists, otherwise on `raw_df`.
 
         Args:
             scaletype (str): The type of scaling to perform.
@@ -163,6 +165,9 @@ class Dataset:
                              'robust' (RobustScaler). Defaults to 'robust'.
             per_group (bool): If True and a grouping_variable is set, scaling is
                               performed within each group. Defaults to True.
+
+        Returns:
+            pd.DataFrame: A new dataframe with the scaled metric columns.
         """
 
         scalers = {
@@ -174,28 +179,29 @@ class Dataset:
             raise ValueError(f"Invalid scaletype. Choose from {list(scalers.keys())}")
         Scaler = scalers[scaletype]
 
-        def apply_scaling(df):
-            if df is None or df.empty:
-                return df
+        # Determine which dataframe to use as the source
+        source_df = self.filtered_df if self.filtered_df is not None else self.raw_df
 
-            df_copy = df.copy()
-            metrics_to_scale = self.metric_variables
-            scaled_cols = [f"{col}_scaled" for col in metrics_to_scale]
+        if source_df is None or source_df.empty:
+            mo_print("No data available for scaling.")
+            self.scaled_df = None
+            # return pd.DataFrame()  # Return an empty dataframe if source is empty
 
-            if per_group and self.grouping_variable:
-                # Scale within each group
-                grouped = df_copy.groupby(self.grouping_variable, group_keys=False)
-                df_copy[scaled_cols] = grouped[metrics_to_scale].apply(
-                    lambda x: Scaler().fit_transform(x) if not x.empty else x
-                )
-            else:
-                # Scale across the entire dataframe
-                df_copy[scaled_cols] = Scaler().fit_transform(df_copy[metrics_to_scale])
-            return df_copy
+        df_copy = source_df.copy()
+        metrics_to_scale = self.metric_variables
+        scaled_cols = [f"{col}_scaled" for col in metrics_to_scale]
 
-        self.raw_df = apply_scaling(self.raw_df)
-        if self.filtered_df is not None:
-            self.filtered_df = apply_scaling(self.filtered_df)
+        if per_group and self.grouping_variable:
+            # Scale within each group
+            grouped = df_copy.groupby(self.grouping_variable, group_keys=False)
+            df_copy[scaled_cols] = grouped[metrics_to_scale].apply(
+                lambda x: Scaler().fit_transform(x) if not x.empty else x
+            )
+        else:
+            # Scale across the entire dataframe
+            df_copy[scaled_cols] = Scaler().fit_transform(df_copy[metrics_to_scale])
+
+        self.scaled_df = df_copy
 
     def calculate_si(self, new_col_name: str = "si_score", metrics_to_use: list = None):
         """
