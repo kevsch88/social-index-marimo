@@ -27,7 +27,7 @@ def _():
     from os import mkdir
     from datetime import datetime
 
-    return Path, alt, asyncio, datetime, ds, json, mo, np, pd, sf
+    return Path, alt, asyncio, datetime, ds, json, mo, np, pd, plt
 
 
 @app.cell
@@ -877,7 +877,7 @@ def _(mo):
 
 
 @app.cell
-def _(get_range, mo, np, pldf, set_compare_metric, set_range, sf, var_choices):
+def _(data, get_range, mo, np, pldf, set_compare_metric, set_range):
 
     # Define UI for rangex
     rangex_slider = mo.ui.range_slider(
@@ -920,7 +920,7 @@ def _(get_range, mo, np, pldf, set_compare_metric, set_range, sf, var_choices):
             # Update the range state, which will automatically update rangex_slider.value
             set_range([np.floor(min_val, dtype=float) - padding,
                       np.ceil(max_val, dtype=float) + padding])
-        elif new_metric_value == 'SI_scores':
+        elif new_metric_value == 'si_score':
             # Specific range for 'SI_scores' if it's not a direct column
             set_range([-12, 13])  # Or calculate if SI_scores is derived
         else:
@@ -930,13 +930,15 @@ def _(get_range, mo, np, pldf, set_compare_metric, set_range, sf, var_choices):
 
     # Define UI for compare_metric
     # Combine SI_scores with other metrics_included
-    metrics_included = var_choices['metric_variables']
-    cleaned_metrics = sf.fix_names(metrics_included)  # apply column name fix
-    available_compare_metrics = ['SI_scores'] + cleaned_metrics
+    # metrics_included = var_choices['metric_variables']
+
+    # cleaned_metrics = sf.fix_names(metrics_included)  # apply column name fix // not needed in new format
+    cleaned_metrics = data.metric_variables
+    available_compare_metrics = ['si_scores'] + cleaned_metrics
 
     compare_metric_selector = mo.ui.dropdown(
         options=available_compare_metrics,
-        value='SI_scores',
+        value='si_score',
         label="Select Metric for Comparison",
         on_change=on_metric_change  # Call custom handler
     )
@@ -949,6 +951,7 @@ def _(get_range, mo, np, pldf, set_compare_metric, set_range, sf, var_choices):
     save_pca_matrix_button = mo.ui.run_button(label='Save plot', kind='warn')
 
     return (
+        cleaned_metrics,
         compare_metric_selector,
         rangex_slider,
         rangey_slider,
@@ -961,14 +964,16 @@ def _(get_range, mo, np, pldf, set_compare_metric, set_range, sf, var_choices):
 @app.cell
 def _(
     compare_metric_selector,
+    data,
     get_range,
     mo,
-    pldf,
     rangex_slider,
     rangey_slider,
     save_distplot_button,
     save_path,
 ):
+    from oss_app.utils import compare_dists_altair
+
     SI_plot_params = dict(
         set_size_params=(3.5, 3.5),
         hide_text=False,
@@ -982,9 +987,11 @@ def _(
             rangex = get_range()
 
         # Generate the Altair plot using the selected UI values
-        altplot_interactive = pldf.compare_dists_altair(
+        altplot_interactive = compare_dists_altair(
+            data.scaled_df,
             # compare_metric=compare_metric_selector.value,
             compare_metric=compare_metric,
+            group_variable=data.grouping_variable,
             filters={},
             max_y=max_y,          # y axis max
             rangex=rangex,  # x axis range
@@ -1068,22 +1075,19 @@ def _(
 @app.cell
 def _(
     alt,
+    cleaned_metrics,
+    data,
     mo,
-    pldf,
     plot_distribution,
     save_distplots_button,
     save_path,
     save_plot,
-    sf,
-    var_choices,
 ):
-    metric_names = sf.fix_names(
-        var_choices['metric_variables'])  # whitespaces and other
 
     dist_plots = []
     with mo.capture_stdout() as _buffer:
-        for metric in metric_names:
-            plot_data = pldf.df_scaled[metric]
+        for metric in cleaned_metrics:
+            plot_data = data.scaled_df[metric]
             xmin = plot_data.min().round()-2
             xmax = plot_data.max().round()+2
 
@@ -1126,6 +1130,83 @@ def _(
             'distplots.png'  # TODO: change label
         with mo.redirect_stdout():
             save_plot(final_chart, dist_plots_filepath)
+    return
+
+
+@app.cell
+def _(plt):
+
+    plt.colormaps()
+    return
+
+
+@app.cell
+def _(mo, np, plt):
+    fig, ax = plt.subplots(figsize=(8, 1), frameon=False)
+    gradient = np.linspace(0, 1, 256)
+    gradient = np.vstack((gradient, gradient))
+    ax.imshow(gradient, aspect='auto', cmap='viridis')
+    ax.set_axis_off()
+    ax.axis('off')
+
+    mo.md(f"Here's the viridis colormap: {mo.as_html(fig)}")
+    return
+
+
+@app.cell
+def _(mo, np, plt):
+    from typing import Tuple, Union
+    from matplotlib.colors import ListedColormap
+    def show_colormap(cmap: Union[str, ListedColormap], label: str = "", figsize: Tuple[float, float] = (1.25, 0.25)):
+        """
+        Displays a matplotlib colormap in a marimo cell.
+
+        Args:
+            cmap: The colormap to display. Can be a string name or a Colormap object.
+            label: An optional label to display above the colormap.
+            figsize: The size of the figure for the colormap display.
+        """
+        fig, ax = plt.subplots(figsize=figsize, frameon=False)
+        gradient = np.linspace(0, 1, 256)
+        gradient = np.vstack((gradient, gradient))
+        ax.imshow(gradient, aspect="auto", cmap=cmap)
+        ax.set_axis_off()
+    
+
+        fig_md = mo.as_html(fig)
+        md_content = f"{label}{fig_md}" if label else f"{fig_md}"
+        plt.close(fig)  # Prevent double-plotting in some environments
+        return mo.md(md_content)
+    show_colormap('viridis', 'this is viridis:')
+    return (show_colormap,)
+
+
+@app.cell
+def _(mo):
+    color_input = mo.ui.text(placeholder="Type colormap name here", debounce=200)
+    color_input_btn = mo.ui.run_button(label='show color')
+    return color_input, color_input_btn
+
+
+@app.cell
+def _(color_input, color_input_btn, mo, show_colormap):
+
+    mo.output.append(mo.hstack([color_input, color_input_btn.left()]))
+    if color_input_btn.value:
+        mo.output.append(show_colormap(color_input.value))
+    
+
+    return
+
+
+@app.cell
+def _(mo):
+    def show_color(hex_code: str, label: str=""):
+        'example hex_code=#FF0000'
+        md_content = mo.md(f"""{label}: &nbsp;<span style="background-color: {hex_code}; display: inline-block; width: 20px; height: 20px; border: 1px solid black;vertical-align:middle"></span>""")
+        return  md_content
+
+    show_color('#FF5000', 'orangey')
     return
 
 
