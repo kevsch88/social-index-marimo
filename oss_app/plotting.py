@@ -1,11 +1,13 @@
+from click import group
 import matplotlib.pyplot as plt
 import altair as alt
-from typing import Union, Tuple
+from typing import Union, Tuple, Any
 from scipy.stats import norm as normf
 from sklearn import mixture
 from oss_app.dataset import Dataset
 from scipy.stats import ks_2samp
 from sklearn import decomposition
+from sklearn.decomposition import PCA
 from pandas.api.types import is_numeric_dtype
 from matplotlib.lines import Line2D
 from matplotlib.pyplot import cm
@@ -15,7 +17,7 @@ import pandas as pd
 import marimo as mo
 import numpy as np
 
-from oss_app.utils import mo_print
+from oss_app.utils import make_categorical, mo_print
 
 
 class ColorSet:
@@ -32,28 +34,23 @@ class ColorSet:
         if not isinstance(group_name, str):
             raise ValueError("group_name must be a string.")
         self.group_name = group_name
-        self.data = self._filter_data(data.copy())
+        self.data = data.copy()
         self.cmap_range = cmap_range if cmap_range else (0, 1)
         # get colormap based on name and range given
+        self._initialize(self.data, color_name, n_divisions)
+
+    def _initialize(self, data: pd.DataFrame | pd.Series | np.ndarray | None, color_name: str, n_divisions: int = 151):
         self.cmap = cm.get_cmap(color_name)
         self.divcmap = ListedColormap(self.cmap(np.linspace(
             self.cmap_range[0], self.cmap_range[1], n_divisions)), name=f"{color_name}_divided")
-        self.colors = self._generate_colors()
+        self.colors = self._generate_colors(data)
 
-    def _filter_data(self, data: pd.DataFrame | pd.Series | np.ndarray | None = None):
-        """Filters the data to the relevant group."""
-        if not isinstance(data, (pd.DataFrame, pd.Series, np.ndarray)):
-            return data
-        data = data[data[self.grouping_variable] == self.group_name][self.metric_name] if isinstance(
-            data, pd.DataFrame) else data[data[self.grouping_variable] == self.group_name]
-        # mo_print(
-        #     f'{self.grouping_variable} == {self.group_name} -> {len(data)} rows')
-        return data
-
-    def _generate_colors(self):
+    def _generate_colors(self, data: pd.DataFrame | pd.Series | np.ndarray | None = None):
         """Generates colors based on the colormap and data."""
-        if isinstance(self.data, pd.DataFrame):
-            values = self.data.select_dtypes(
+        if data is None:
+            data = self.data
+        if isinstance(data, pd.DataFrame):
+            values = data.select_dtypes(
                 include=[np.number]).values.flatten()
         elif isinstance(self.data, pd.Series):
             values = self.data.values.flatten()
@@ -66,6 +63,37 @@ class ColorSet:
             (np.max(values) - np.min(values))
         return [colors.rgb2hex(self.cmap(v)) for v in normed_values]
 
+    def _filter_data(self, data: pd.DataFrame | pd.Series | np.ndarray | None = None, grouping_variable: str | None = None):
+        """Filters the data to the relevant group.
+        This method updates the `filtered_data` attribute with the data for the specified group.
+        If `data` is not provided, it uses the original data stored in the instance.<br>
+        NOTE: `Colorset.colors` will now be based on the filtered data, run `_initialize(self.data)` to get original colors.
+        Args:
+            data (pd.DataFrame | pd.Series | np.ndarray | None): The data to filter.
+            grouping_variable (str | None): The grouping variable to filter by.
+        Returns:
+            pd.DataFrame | pd.Series | np.ndarray | None: The filtered data.
+        """
+        if data is None:
+            data = self.data
+        if not isinstance(data, (pd.DataFrame, pd.Series, np.ndarray)):
+            raise ValueError(
+                "Data must be a DataFrame, Series, or NumPy array.")
+        if not grouping_variable and self.grouping_variable:
+            grouping_variable = self.grouping_variable
+        elif not grouping_variable:
+            raise ValueError(
+                "grouping_variable must be specified if not provided in the data.")
+
+        data = data[data[self.grouping_variable] == self.group_name][self.metric_name] if isinstance(
+            data, pd.DataFrame) else data[data[self.grouping_variable] == self.group_name]
+
+        self.filtered_data = data
+        # regenerate colors based on filtered data
+        #   NOTE: colors are now based on the filtered data
+        self.colors = self._generate_colors(self.filtered_data)
+        return self.filtered_data
+
     def _map_colors(self, data: pd.DataFrame | np.ndarray | None = None):
         """Maps colors to groups in a DataFrame or NumPy array."""
         if data is None:
@@ -77,7 +105,7 @@ class ColorSet:
         else:
             raise ValueError("Data must be a DataFrame or NumPy array.")
 
-    def _blend_colors(self, other_color_set: 'ColorSet', split: bool = True):
+    def blend_colors(self, other_color_set: 'ColorSet', split: bool = True):
         """Blends this color set with another ColorSet."""
         if not isinstance(other_color_set, ColorSet):
             raise ValueError(
@@ -485,7 +513,7 @@ def do_pca(data: pd.DataFrame, n_comp=3):
     return pca, principal_components, pc_evr
 
 
-def pca_biplot(
+def pca_biplot_old(
     dataset_obj,
     df_to_use=pd.DataFrame() | str | None,
     grouping_variable="",
@@ -663,3 +691,56 @@ def pca_biplot(
                 frameon=False,
                 markerscale=1.5,
             )
+
+
+def pca_biplot(
+
+    df_to_use=pd.DataFrame(),
+    grouping_variable="",
+    metrics_inluded: list[str] | None = None,
+    labels="",
+    pca_inputs: list[Union[PCA, np.ndarray, ...]] = None,
+    n_comp=3,
+    mapping=0,
+    pcs=None,
+    colorset: ColorSet | None = None,
+    hide_text=False,
+    **scatter_kwargs,
+):
+    # data prep
+
+    assert not df_to_use.empty, "Input DataFrame `df_to_use` cannot be empty."
+    df = df_to_use.copy()
+    if not metrics_inluded:
+        metrics_inluded = df.select_dtypes(
+            include=[np.number]).columns.tolist()
+    metric_labels = metrics_inluded
+
+    # PCA
+    if not pca_inputs:
+        pca, princomps, pc_evr = do_pca(df, n_comp)
+    else:
+        pca, princomps, pc_evr = pca_inputs
+    if pcs is None:  # TODO: rename pcs and pcset_to_plot
+        pc_range = range(n_comp)
+        pcset_to_plot = [[x, y] for x, y in zip(pc_range[0:-1], pc_range[1:])]
+    else:
+        pcset_to_plot = [pcs]
+
+    # Plotting setup
+    group_categories = make_categorical(df[grouping_variable])
+    x_index = group_categories["codes"]
+    style_mapping = {0: "v", 1: "o"}  # marker style for groups
+    size_mapping = {0: 70, 1: 60}  # marker size for groups
+    conds_stylemap = [style_mapping.get(i)
+                      for i in x_index]  # TODO: rename conds_*
+    conds_sizemap = [size_mapping.get(i) for i in x_index]
+    if colorset is None:
+        colorset = ColorSet(
+            color_name="viridis",
+            metric_name='si_score',  # choose a
+            grouping_variable=grouping_variable,
+            group_name=group_categories["labels"][0],
+            data=df
+        )
+    colorset = ColorSet()
