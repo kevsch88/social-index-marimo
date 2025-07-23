@@ -32,7 +32,6 @@ def _():
         Path,
         alt,
         asyncio,
-        colormap_to_hex,
         datetime,
         ds,
         json,
@@ -192,7 +191,7 @@ def _(Path, file, file_drop, mo, overwrite_cbox):
             filepath_parent = Path(filepath).parent
         case _y if _y and not file_drop.value:  # file explorer upload used
             file_choice = file.value["browser"][0]
-            filepath = r"raw_csv/example_SI_data.csv"
+            filepath = Path(file_choice.id)
             filename = Path(filepath).name
 
     filepath_parent = Path(filepath).parent
@@ -296,7 +295,7 @@ def _(mo):
         md_content += "\n" + \
             format_value("metric_variables",
                          params_output.get("metric_variables"))
-    
+
         md_content += "\n#### Filters:"
         filters = params_output.get("filters", {})
         if filters == {}:
@@ -305,7 +304,7 @@ def _(mo):
             for fkey, fval in filters.items():
                 md_content += "\n* " + \
                     f'{fformat}{fkey}</span>" &nbsp;== &nbsp; "{fformat}{fval}</span>"'
-        
+
         md_content += "\n#### Colors:"
         colors = params_output.get("colors", {})
         if colors == {}:
@@ -367,7 +366,8 @@ def _(
         case y if y and (not overwrite):  # overwrite == False
             with mo.redirect_stdout():
                 print(
-                    f'Output folder exists already in: {_save_path}, a new output folder will be made.')
+                    f"""Output folder exists already in: {_save_path}.  
+                    A new appended output folder will be made.""")
             _i = 0
             while _save_path.exists():  # if file already exist, append numbers
                 _save_path = filepath_parent / \
@@ -715,7 +715,7 @@ def _(filter_ui):
         filter_type = filter_ui._last_transforms.transforms[0].type.value
         filter_operator = filter_ui._last_transforms.transforms[0].operation
         final_transforms = {}
-    
+
         transforms = filter_ui._last_transforms.transforms
         if transforms != []:
             for transform in transforms:
@@ -742,14 +742,15 @@ def _(mo):
 
 
 @app.cell
-def _(colormap_to_hex, df, group_variable, make_categorical, mo, plt):
+def _(df, group_variable, make_categorical, mo, plt):
 
     _, labels = make_categorical(df[group_variable[0]]).items()
     group1, group2 = list(labels[1])
 
     colormap_dropdn = lambda x,y: mo.ui.dropdown(label=x, options=plt.colormaps(), value=y, searchable=True)
 
-    default_colors = colormap_to_hex('tab10', 10)[:2]
+    # default_colors = colormap_to_hex('tab10', 10)[:2]
+    default_colors = ["#e45756", "#4c78a8"]
     solidcolor_input = lambda x, y: mo.ui.text(placeholder="Color name or hex code here", label=x, value=y, debounce=True)
 
 
@@ -905,7 +906,7 @@ def _(ds, filtered_df, var_choices):
 
 @app.cell
 def _(data):
-    from oss_app.utils import do_pca, pca_biplot
+    from oss_app.plotting import do_pca, pca_biplot
     pca_metrics = [m for m in data.metric_variables if m != 'si_score']
     metricsdata = data.scaled_df[pca_metrics]
     pca, principal_components, pc_evr = do_pca(metricsdata)
@@ -972,12 +973,12 @@ def _(mo):
     get_range, set_range = mo.state([-12, 13])
 
     # State for the selected comparison metric
-    get_compare_metric, set_compare_metric = mo.state('SI_scores')
+    get_compare_metric, set_compare_metric = mo.state('si_score')
     return get_range, set_compare_metric, set_range
 
 
 @app.cell
-def _(data, get_range, mo, np, pldf, set_compare_metric, set_range):
+def _(data, get_range, mo, np, set_compare_metric, set_range):
 
     # Define UI for rangex
     rangex_slider = mo.ui.range_slider(
@@ -999,15 +1000,19 @@ def _(data, get_range, mo, np, pldf, set_compare_metric, set_range):
 
     # Define function for updating range
     def on_metric_change(new_metric_value):
+        global data
         # Update the selected metric state
         set_compare_metric(new_metric_value)
-
-        data = pldf.df_scaled.copy()
+    
+        df = data.scaled_df.copy()
         # --- Logic to automatically set slider range based on new_metric_value ---
-        if new_metric_value in data.columns:
+        if new_metric_value == 'si_score':
+            # Specific range for 'SI_scores' if it's not a direct column
+            set_range([-12, 13])  # Or calculate if SI_scores is derived
+        elif new_metric_value in df.columns:
             # Get min/max from the actual data for the selected column
-            min_val = data[new_metric_value].min()
-            max_val = data[new_metric_value].max()
+            min_val = df[new_metric_value].min()
+            max_val = df[new_metric_value].max()
 
             # Add a little padding for better visualization
             padding = (max_val - min_val) * 0.3
@@ -1020,9 +1025,6 @@ def _(data, get_range, mo, np, pldf, set_compare_metric, set_range):
             # Update the range state, which will automatically update rangex_slider.value
             set_range([np.floor(min_val, dtype=float) - padding,
                       np.ceil(max_val, dtype=float) + padding])
-        elif new_metric_value == 'si_score':
-            # Specific range for 'SI_scores' if it's not a direct column
-            set_range([-12, 13])  # Or calculate if SI_scores is derived
         else:
             # Fallback default
             # A reasonable default if no data-driven range is found
@@ -1034,7 +1036,7 @@ def _(data, get_range, mo, np, pldf, set_compare_metric, set_range):
 
     # cleaned_metrics = sf.fix_names(metrics_included)  # apply column name fix // not needed in new format
     cleaned_metrics = data.metric_variables
-    available_compare_metrics = ['si_scores'] + cleaned_metrics
+    available_compare_metrics = ['si_score'] + cleaned_metrics
 
     compare_metric_selector = mo.ui.dropdown(
         options=available_compare_metrics,
@@ -1066,13 +1068,15 @@ def _(
     compare_metric_selector,
     data,
     get_range,
+    group1_colors,
+    group2_colors,
     mo,
     rangex_slider,
     rangey_slider,
     save_distplot_button,
     save_path,
 ):
-    from oss_app.utils import compare_dists_altair
+    from oss_app.plotting import compare_dists_altair
 
     SI_plot_params = dict(
         set_size_params=(3.5, 3.5),
@@ -1095,6 +1099,7 @@ def _(
             filters={},
             max_y=max_y,          # y axis max
             rangex=rangex,  # x axis range
+            user_colors=[group1_colors['g1_solid'], group2_colors['g2_solid']],
             user_labels=None,  # or eg, ['delayed', 'immediate']
             legend=True,       # add legends
             set_size_params=(3.5, 3.5),  # size of plot,
@@ -1139,15 +1144,15 @@ def _(
         print(f'\nSaved plot to "{plot_filepath}".')
 
     # Layout
-    mo.output.append(mo.accordion({
-        "### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Single metric distribution comparison": mo.vstack([
+    mo.output.append(mo.vstack([
+        mo.md("### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Single metric distribution comparison"),
             mo.md(f"""
             Desc...  <br>
             <br>
             """).style(color="white"),
             dist_layout,
             save_distplot_button.right(),
-        ])}, lazy=True))
+        ]))
 
     _console_logs = ['<br>'+line for line in _buffer.getvalue().split('\n')]
     # [mo.output.append(line) for line in [mo.md(
@@ -1201,15 +1206,15 @@ def _(
     final_chart = alt.hconcat(*dist_plots).resolve_scale(y='independent')
 
     # Layout
-    mo.output.append(mo.accordion({
-        "### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Distribution comparisons for chosen metrics": mo.vstack([
+    mo.output.append(mo.vstack([
+        mo.md("### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Distribution comparisons for chosen metrics"),
             mo.md(f"""
             Desc...  <br>
             <br>
             """).style(color="white"),
             final_chart,
             save_distplots_button.right()
-        ])}, lazy=True))
+        ]))
 
     _console_logs = [line for line in _buffer.getvalue().split('\n')[1:]]
     # test=[mo.output.append(line) for line in [mo.md(
@@ -1237,131 +1242,80 @@ def _(
 def _(mo, save_scatter_button):
 
     # Layout
-    mo.output.append(mo.accordion({
-        "### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Scatterplot metrics": mo.vstack([
+    mo.output.append(mo.vstack([
+        mo.md("### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Scatterplot metrics"), 
             mo.md(f"""
-            Desc...  <br>
+            Distribution scatterplots of individual data points colored by overall index score. <br>
+            Can use z-scored or raw metric values.
+            <br>
             <br>
             """),
+            mo.md("""**Example**<br>
+        z-scored values    
+        <img src="public/si_scatters_zscore.png" width="500" />
+        raw values  
+        <img src="public/si_scatters_raw.png" width="500" />
+        """),
             save_scatter_button.right()
-        ])}))
+        ]))
     return
 
 
 @app.cell
-def _(mo):
+def _(mo, save_scatter_button):
 
     # Layout
-    mo.output.append(mo.accordion({
-        "### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Correlation scatter metrics": mo.vstack([
+    mo.output.append(mo.vstack([
+        mo.md("### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:Correlation scatter metrics"),
             mo.md(f"""
-            Desc...  <br>
+            Correlation plots for each metric against the index score, also colored by index score.   <br>
+            Can use z-scored or raw metric values.
             <br>
-            """).style(color="white"),
-        ])}))
+            <br>
+            """),
+        mo.md("""**Example**<br>
+        z-scored values  
+        ![example](public/labels.png) 
+        ![example](public/si_correls_zscore.png)  
+        raw values  
+        ![example](public/labels.png) 
+        ![example](public/si_correls_raw.png) 
+        """),
+            save_scatter_button.right()
+        ]))
     return
 
 
 @app.cell
-def _(mo):
+def _(mo, save_scatter_button):
 
     # Layout
-    mo.output.append(mo.accordion({
-        "### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:PCA analysis": mo.vstack([
+    mo.output.append(mo.vstack([
+        mo.md("### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:PCA analysis"),
             mo.md(f"""
-            Desc...  <br>
+            PCA includes two plots:  
+        
+            - biplot of individual data points for scaled metrics, colored by index score
+            - correlation matrix of scaled metrics to each principal component
             <br>
-            """).style(color="white"),
-        ])}))
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""# To do""")
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _(mo):
-    mo.stop(True)
-    mo.md(
-        r"""
-    <!-- ## sequence
-    - change nomenclature and organization
-        - index and group columns unclear
-        - maybe ID column, independent var columns, experimental grouping columns and dependent (metric) columns
-    - build DataDF
-    - get raw --> make part of Class init
-    - some preprocessing
-        - fix columns, ie whitespaces and stuff
-        - define_groups - option to make a composite group
-    - set up filter if wanted
-        - can use the dataframe mode for this or maybe something else and then submit transformed df
-    - gets scaled data
-    - gets social index
-    - map colors (NEEDS REWORK)
-    - sub filters for comparison?
-        - change to be able to make multiple comparisons
-        - multiple choice of index columns for grouping
-    - 1st plots - altair/plotly? may make adding filtering redundant
-        - compare_dists for SI scores - fixed, but maybe filtering? radial for sex?
-        - dists by groupvar for other metrics - multiselect
-    - GMM grid search and scoring, scatterplot
-        - `gmm_bic_score`, `gmm_grid_search`, `gmm_cluster_plot`
-    - PCA steps
-        - `make_cat` make categoricals? -- add to class maybe
-        - `do_pca` returns pca, principal_components, pc_evr (`pca.explained_variance_ratio_`)
-        - pca_biplot
-        - `get_pca_corrs` with `plot_xcorrs`
-    - scatter SI plots + correl plots (needs tweaking for axis / fitting)
-        - `si_plots`
-        - `si_corrs` can these two be merged more or simplified?
-        - uses `plot_dicts` with axis limits for given metrics
-            - selections and sliders? -->
-    """
-    )
-    return
-
-
-@app.cell
-def _(mo):
-    callout = mo.callout(mo.md("### This is a callout"), kind="info")
-    mo.accordion({"Columns selected as indices": callout}, multiple=True)
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(
-        r"""
-    <!-- ## elements to add:
-
-    - [array](https://docs.marimo.io/api/inputs/array/) for multiple text or other inputs
-    - text area for notes / metadata
-    - [batch](https://docs.marimo.io/api/inputs/batch/) ui to preformat the layout for other ui elements
-    - [code_editor](https://docs.marimo.io/api/inputs/code_editor/) for adding code snippets
-    - [data explorer](https://docs.marimo.io/api/inputs/data_explorer/) for exploring dataframes interactively
-        - suggests plots and lets you add/remove encodings (variables) to explore analyses
-    - [dictionary](https://docs.marimo.io/api/inputs/dictionary/) to show nested such as selections for parameters etc
-    - [file_browser](https://docs.marimo.io/api/inputs/file_browser/) for selecting files
-    - [image](https://docs.marimo.io/api/inputs/image/) for displaying images
-    - [radio]](https://docs.marimo.io/api/inputs/radio/) for selecting single options from a list of a few choices
-    - [slider](https://docs.marimo.io/api/inputs/slider/) for selecting numeric values from a range
-        - [range_slider](https://docs.marimo.io/api/inputs/range_slider/) for selecting a range within a range
-    - [switch](https://docs.marimo.io/api/inputs/switch/) for toggling boolean values
-    - [mermaid](https://docs.marimo.io/api/inputs/mermaid/) for creating diagrams and flowcharts
-    - [media](https://docs.marimo.io/api/inputs/media/) for displaying images, videos, and other media files
-    - [plotting](https://docs.marimo.io/api/inputs/plotting/) for creating interactive plots and visualizations
-
-    also figure out interplay with [SQL db and models](https://docs.marimo.io/guides/working_with_data/sql/#connecting-to-a-custom-database), and loguru -->
-    """
-    )
+            Can be labeled (with metrics' names), ordered (index number of metric column) or None (no text).
+            <br>
+            <br>
+            """),
+            mo.md("**Examples**<br>"),
+        mo.md("""
+        Labeled  
+        <img src="public/pca_labeled.png" width="300" />  
+        Ordered  
+        <img src="public/pca_ordered.png" width="300" />
+        None  
+        <img src="public/pca_none.png" width="300" />  
+        <br>
+        Matrix  
+        <img src="public/pca_matrix.png" width="300" />
+        """),
+            save_scatter_button.right()
+        ]))
     return
 
 
