@@ -742,11 +742,6 @@ def _(mo):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(colormap_to_hex, df, group_variable, make_categorical, mo, plt):
 
     _, labels = make_categorical(df[group_variable[0]]).items()
@@ -859,6 +854,14 @@ def _(
 
 
 @app.cell
+def _(df, show_color):
+    from oss_app.plotting import ColorSet
+    testc = ColorSet(color_name='viridis', metric_name='Distance (m)', grouping_variable='Group', group_name='stress', data=df)
+    show_color(testc.colors[1])
+    return
+
+
+@app.cell
 def _(mo):
     mo.md(
         r"""
@@ -898,6 +901,17 @@ def _(ds, filtered_df, var_choices):
     data.calculate_si()
     data
     return (data,)
+
+
+@app.cell
+def _(data):
+    from oss_app.utils import do_pca, pca_biplot
+    pca_metrics = [m for m in data.metric_variables if m != 'si_score']
+    metricsdata = data.scaled_df[pca_metrics]
+    pca, principal_components, pc_evr = do_pca(metricsdata)
+
+
+    return
 
 
 @app.cell
