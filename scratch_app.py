@@ -61,7 +61,7 @@ def _(mo):
 def _(Path, mo):
     # set starting path and dynamic state to retrieve, for returning to default
     # change if need to look for file elsewhere
-    starting_path = Path(r'./raw_csv').resolve()
+    starting_path = Path(".").resolve()
     reset_button = mo.ui.run_button(label='Return to initial path')
 
     checkbox_style = "<span style='display:inline;vertical-align:baseline;color:coral; font-size:14px'>"
@@ -73,7 +73,14 @@ def _(Path, mo):
 
 
 @app.cell
-def _(mo, reset_button, starting_path):
+def _(starting_path):
+    starting_path
+    return
+
+
+@app.cell
+def _(mo, starting_path):
+    mo.stop(not starting_path.exists(), "Starting path for file browser is not valid.")
     # file selection
     browser = mo.ui.file_browser(
         initial_path=starting_path,
@@ -99,10 +106,7 @@ def _(mo, reset_button, starting_path):
     # file selector
     file = mo.md('''
         {browser}
-
-        <span style='display:inline;padding:0px 0px 0px 5px;float:left'>{reset_button}</span> 
         ''').batch(browser=browser,
-                   reset_button=reset_button
                    ).form(
         bordered=True, loading=False,
         submit_button_label="Confirm Selection"
@@ -120,8 +124,16 @@ def _(checkbox_style, mo, overwrite_cbox):
 
 
 @app.cell
-async def _(asyncio, file, file_drop, file_ui, mo, reset_button):
-
+async def _(
+    asyncio,
+    file,
+    file_drop,
+    file_ui,
+    mo,
+    reset_button,
+    starting_path,
+):
+    mo.stop(not starting_path.exists())
     # reset gui
     mo.output.append(mo.ui.tabs({
         'file explorer': file,
@@ -416,96 +428,45 @@ def _(mo):
 
 @app.cell
 def _(df, loaded_params, mo, previous_params):
+    if not loaded_params():
+        subject_id_initial=[]
+        sex_variable_initial=[]
+        grouping_variable_initial=[]
+        index_variables_initial=[]
+        metrics_variables_initial=[]
+    else:
+        subject_id_initial = previous_params["subject_id_variable"]
+        sex_variable_initial = previous_params["sex_variable"]
+        grouping_variable_initial = previous_params["grouping_variable"]
+        index_variables_initial = previous_params["index_variables"]
+        metrics_variables_initial = previous_params["metric_variables"]
 
     # Create dropdowns for selecting columns, or fill in with loaded parameters
     subject_id_selector = mo.ui.multiselect(
         options=df.columns.tolist(), label="ID Variable", max_selections=1,
-        value=[] if not loaded_params() else previous_params["subject_id_variable"]
-    )
-    sex_variable_selector = mo.ui.multiselect(
-        options=df.columns.tolist(), label="Sex Variable", max_selections=1,
-        value=[] if not loaded_params() else previous_params["sex_variable"]
-    )
-    grouping_variable_selector = mo.ui.multiselect(
-        options=df.columns.tolist(), label="Grouping Variable", max_selections=1,
-        value=[] if not loaded_params() else previous_params["grouping_variable"]
+        value=subject_id_initial
     )
 
+    sex_variable_selector = mo.ui.multiselect(
+        options=df.columns.tolist(), label="Sex Variable", max_selections=1,
+        value=sex_variable_initial
+    )
+
+    grouping_variable_selector = mo.ui.multiselect(
+        options=df.columns.tolist(), label="Grouping Variable", max_selections=1,
+        value=grouping_variable_initial
+    )
     return (
         grouping_variable_selector,
+        index_variables_initial,
+        metrics_variables_initial,
         sex_variable_selector,
         subject_id_selector,
     )
 
 
-@app.cell
-def _(
-    df,
-    grouping_variable_selector,
-    loaded_params,
-    mo,
-    previous_params,
-    sex_variable_selector,
-    subject_id_selector,
-):
-    # Register selections or set defaults
-    id_variable = subject_id_selector.value
-    sex_variable = sex_variable_selector.value
-    group_variable = grouping_variable_selector.value
-
-    # index selector (single index variable choices removed)
-    selected_idx_options = set(id_variable+sex_variable+group_variable)
-    filtered_idx_options = [option for i, option in enumerate(
-        df.columns.tolist()) if (option not in selected_idx_options)]
-
-    index_column_selector = mo.ui.multiselect(
-        options=filtered_idx_options, label="Other Indices",
-        value=[] if not loaded_params() else previous_params["index_variables"]
-    )
-    return group_variable, id_variable, index_column_selector, sex_variable
-
-
-@app.cell
-def _(
-    df,
-    group_variable,
-    id_variable,
-    index_column_selector,
-    loaded_params,
-    mo,
-    previous_params,
-    sex_variable,
-):
-    indices = index_column_selector.value
-
-    # metric selector (index variable choices removed)
-    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
-    selected_options = set(indices+id_variable+sex_variable+group_variable)
-    filtered_options = [option for i, option in enumerate(df.columns.tolist()) if (
-        option not in selected_options) or (option in numeric_columns)]
-    metric_columns_selector = mo.ui.multiselect(
-        options=filtered_options, label="Metrics",
-        value=[] if not loaded_params() else previous_params["metric_variables"]
-    )
-
-    # button to confirm choices
-    submit_choices = mo.ui.run_button(label="Confirm Selections", kind='warn', disabled=loaded_params())
-    var_choices = {}
-    return metric_columns_selector, submit_choices, var_choices
-
-
 @app.cell(hide_code=True)
-def _(
-    grouping_variable_selector,
-    index_column_selector,
-    loaded_params,
-    metric_columns_selector,
-    mo,
-    sex_variable_selector,
-    subject_id_selector,
-    submit_choices,
-    var_choices,
-):
+def _(mo):
     # Column / Variable selection
     def create_input_row(selector_element, value_display_func, description_text="", description_color='#AAAAAA'):
         # Apply style to the selector to control its width and alignment
@@ -561,56 +522,292 @@ def _(
             # lambda val: ',  <br>'.join(sorted(val)) if len(val) < 5 else f"<span style='display: block; font-size:0.9em; line-height:1.5em'>{',  <br>'.join(sorted(val))}</span>",
             description)
         return input_row
+    return
 
-    selectors = mo.vstack([
-        mo.hstack([
-            mo.md(f"### Select Columns for Analysis").style(
-                {"flex-grow": "1"}),
-            mo.md("### Descriptions").style({"flex-grow": "1"})
-        ]),
-        add_variable_input_row(
-            subject_id_selector,
-            "Select the column that uniquely identifies each subject in the dataset."
-        ), mo.md('---'),
-        add_variable_input_row(
-            sex_variable_selector,
-            "Select the column that defines the sex of each subject in the dataset."
-        ), mo.md('---'),
-        add_variable_input_row(
-            grouping_variable_selector,
-            """Select the column that defines the grouping or category for comparison within your data (e.g., condition [control vs treatment], delay[short vs long]).  
-            <span style='font-size:0.8em; color:#888888'>Only one can be chosen to compare at a time for now, use filters below to restrict comparisons if many grouping variables are present.  \nFor example, if grouping by condition but don't want to collapse across sex, filter for male or female.</span>"""
-        ), mo.md('---'),
-        add_variable_input_row(
-            index_column_selector,
-            """Select columns that serve as unique identifiers for your data entries (e.g., patient ID, sample number).  
-            These columns will not be included in the analysis as metrics.""",
-        ), mo.md('---'),
-        add_metric_input_row(
-            metric_columns_selector,
-            """Select the columns containing numerical data that you want to analyze as metrics.  
-            These will be used for statistical computations."""
-        ),
-        submit_choices.style(
-            {'width': 'fit-content', 'padding': '20px 20px'}).right()
+
+@app.cell(hide_code=True)
+def _():
+    # selectors = mo.vstack([
+    #     mo.hstack([
+    #         mo.md(f"### Select Columns for Analysis").style(
+    #             {"flex-grow": "1"}),
+    #         mo.md("### Descriptions").style({"flex-grow": "1"})
+    #     ]),
+    #     add_variable_input_row(
+    #         subject_id_selector,
+    #         "Select the column that uniquely identifies each subject in the dataset."
+    #     ), mo.md('---'),
+    #     add_variable_input_row(
+    #         sex_variable_selector,
+    #         "Select the column that defines the sex of each subject in the dataset."
+    #     ), mo.md('---'),
+    #     add_variable_input_row(
+    #         grouping_variable_selector,
+    #         """Select the column that defines the grouping or category for comparison within your data (e.g., condition [control vs treatment], delay[short vs long]).  
+    #         <span style='font-size:0.8em; color:#888888'>Only one can be chosen to compare at a time for now, use filters below to restrict comparisons if many grouping variables are present.  \nFor example, if grouping by condition but don't want to collapse across sex, filter for male or female.</span>"""
+    #     ), mo.md('---'),
+    #     add_variable_input_row(
+    #         index_column_selector,
+    #         """Select columns that serve as unique identifiers for your data entries (e.g., patient ID, sample number).  
+    #         These columns will not be included in the analysis as metrics.""",
+    #     ), mo.md('---'),
+    #     add_metric_input_row(
+    #         metric_columns_selector,
+    #         """Select the columns containing numerical data that you want to analyze as metrics.  
+    #         These will be used for statistical computations."""
+    #     ),
+    #     submit_choices.style(
+    #         {'width': 'fit-content', 'padding': '20px 20px'}).right()
+    # ])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    # subject_id_row = add_variable_input_row(
+    #         subject_id_selector,
+    #         "Select the column that uniquely identifies each subject in the dataset."
+    #     )
+    # sex_variable_row = add_variable_input_row(
+    #         sex_variable_selector,
+    #         "Select the column that defines the sex of each subject in the dataset."
+    #     )
+    # grouping_variable_row = add_variable_input_row(
+    #         grouping_variable_selector,
+    #         """Select the column that defines the grouping or category for comparison within your data (e.g., condition [control vs treatment], delay[short vs long]).  
+    #         <span style='font-size:0.8em; color:#888888'>Only one can be chosen to compare at a time for now, use filters below to restrict comparisons if many grouping variables are present.  \nFor example, if grouping by condition but don't want to collapse across sex, filter for male or female.</span>"""
+    #     )
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    # idx_selectors = mo.vstack([
+    #     mo.hstack([
+    #     mo.md(f"### Select Main Index Columns for Analysis").style(
+    #         {"flex-grow": "1"}),
+    #     mo.md("### Descriptions").style({"flex-grow": "1"})
+    #     ]),
+    #     subject_id_row, mo.md('---'),
+    #     sex_variable_row, mo.md('---'),
+    #     grouping_variable_row, mo.md('---'),
+    # ])
+    return
+
+
+@app.cell
+def _(mo):
+    mo.hstack([
+    mo.md(f"### Select Metrics and Additional Index Columns for Analysis").style(
+        {"flex-grow": "1"}),
+    mo.md("### Descriptions").style({"flex-grow": "1"})
     ])
+    return
 
-    if submit_choices.value or loaded_params():
-        var_choices.update({
+
+@app.cell
+def _(mo):
+    def display_selections(selection: list=[]):
+        if selection==[]:
+            return "&nbsp;"
+        elif len(selection) < 2:
+            return selection[0]
+        else:
+            return ',<br>'.join([i[0] for i in selection])
+    
+    def description(description_text: str):
+        md_content = mo.md(
+            # Use <small> tag for smaller text
+            f"<medium>{description_text}</medium>"
+        ).style({"color": '#AAAAAA'})
+
+        return md_content
+    return description, display_selections
+
+
+@app.cell
+def _(description, display_selections, mo, subject_id_selector):
+    mo.output.append(
+            mo.hstack([
+               mo.vstack([
+                    subject_id_selector, 
+                    mo.md(display_selections(subject_id_selector.value)).style({"color": "lightlavender"})
+                ]), 
+                description("Select the column that uniquely identifies each subject in the dataset.")
+                ],
+                widths=[0.3, 0.7],  # 30% for the left column, 70% for the right
+                justify="end",  # Align the content of the hstack to the end (right)
+                align="start",     # Align content of this hstack to the top
+                wrap=True),
+    )
+    mo.output.append(mo.md('---'))
+    return
+
+
+@app.cell
+def _(description, display_selections, mo, sex_variable_selector):
+    mo.output.append(
+            mo.hstack([
+               mo.vstack([
+                    sex_variable_selector, 
+                    mo.md(display_selections(sex_variable_selector.value)).style({"color": "lightlavender"})
+                ]), 
+                description("Select the column that defines the sex of each subject in the dataset.")
+                ],
+                widths=[0.3, 0.7],  # 30% for the left column, 70% for the right
+                justify="end",  # Align the content of the hstack to the end (right)
+                align="start",     # Align content of this hstack to the top
+                wrap=True),
+    )
+    mo.output.append(mo.md('---'))
+
+    return
+
+
+@app.cell
+def _(description, display_selections, grouping_variable_selector, mo):
+    mo.output.append(
+            mo.hstack([
+                mo.vstack([
+                    grouping_variable_selector, 
+                    mo.md(display_selections(grouping_variable_selector.value)).style({"color": "lightlavender"})
+                ]),
+                description("""Select the column that defines the grouping or category for comparison within your data (e.g., condition [control vs treatment], delay[short vs long]).  
+             <span style='font-size:0.8em; color:#888888'>Only one can be chosen to compare at a time for now, use filters below to restrict comparisons if many grouping variables are present.  \nFor example, if grouping by condition but don't want to collapse across sex, filter for male or female.</span>""")
+                ],
+                widths=[0.3, 0.7],  # 30% for the left column, 70% for the right
+                justify="end",  # Align the content of the hstack to the end (right)
+                align="start",     # Align content of this hstack to the top
+                wrap=True),
+    )
+    mo.output.append(mo.md('---'))
+    return
+
+
+@app.cell
+def _(grouping_variable_selector, sex_variable_selector, subject_id_selector):
+    selected_idx_options=[x.value for x in [subject_id_selector, sex_variable_selector, grouping_variable_selector]]
+    return (selected_idx_options,)
+
+
+@app.cell
+def _(df, mo, selected_idx_options):
+    mo.stop(len(selected_idx_options) < 3)
+
+    filtered_idx_options=[col for col in df.columns.to_list() if col not in set([o[0] for o in selected_idx_options])]
+    return (filtered_idx_options,)
+
+
+@app.cell
+def _(filtered_idx_options, index_variables_initial, mo):
+    index_column_selector = mo.ui.multiselect(
+        options=filtered_idx_options, label="Other Indices",
+        value=index_variables_initial
+    )
+    return (index_column_selector,)
+
+
+@app.cell
+def _():
+    # if not main_idx_not_complete:
+    
+    # index selector (single index variable choices removed)
+    # selected_idx_options = set(id_variable+sex_variable+group_variable)
+    # filtered_idx_options = [option for i, option in enumerate(
+    #     df.columns.tolist()) if (option not in selected_idx_options)]
+    return
+
+
+@app.cell
+def _(df, index_column_selector, selected_idx_options):
+    indices = index_column_selector.value
+    selected_options = set([i[0] for i in selected_idx_options+indices])
+
+    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+    filtered_options = [option for option in df.columns.tolist() if (
+        option not in selected_options) or (option in numeric_columns)]
+    return (filtered_options,)
+
+
+@app.cell
+def _(filtered_options, metrics_variables_initial, mo):
+    # metric selector (index variable choices removed)
+    metric_columns_selector = mo.ui.multiselect(
+        options=filtered_options, label="Metrics",
+        value=metrics_variables_initial
+    )
+    return (metric_columns_selector,)
+
+
+@app.cell
+def _(loaded_params, mo):
+    # button to confirm choices
+    submit_choices = mo.ui.run_button(label="Confirm Selections", kind='warn', disabled=loaded_params())
+    var_choices = {}
+    return submit_choices, var_choices
+
+
+@app.cell
+def _():
+    # index_variables_row = add_variable_input_row(
+    #         index_column_selector,
+    #         """Select columns that serve as unique identifiers for your data entries (e.g., patient ID, sample number).  
+    #         These columns will not be included in the analysis as metrics.""",
+    #     )
+    # metrics_row = add_metric_input_row(
+    #         metric_columns_selector,
+    #         """Select the columns containing numerical data that you want to analyze as metrics.  
+    #         These will be used for statistical computations."""
+    #     )
+    return
+
+
+@app.cell
+def _(index_column_selector, mo):
+    mo.output.append(index_column_selector)
+    return
+
+
+@app.cell
+def _(metric_columns_selector, mo):
+    mo.output.append(metric_columns_selector)
+    
+    return
+
+
+@app.cell
+def _(submit_choices):
+    submit_choices.style(
+            {'width': 'fit-content', 'padding': '20px 20px'}).right()
+    return
+
+
+@app.cell
+def _(
+    grouping_variable_selector,
+    index_column_selector,
+    loaded_params,
+    metric_columns_selector,
+    mo,
+    sex_variable_selector,
+    subject_id_selector,
+    submit_choices,
+    var_choices,
+):
+    mo.stop((submit_choices.value is False) and (not loaded_params()))
+    var_choices.update({
             "subject_id_variable": subject_id_selector.value[0],
             "grouping_variable": grouping_variable_selector.value[0],
             "sex_variable": sex_variable_selector.value[0],
             "index_variables": index_column_selector.value,
             "metric_variables": metric_columns_selector.value,
         })
-        all_choices = []  # concatenate choices for parameters
-        for key,entries in var_choices.items():
-            if isinstance(entries, str):
-                all_choices.append(entries)
-            else:
-                all_choices.extend([entry for entry in entries])
-
-    selectors
+    all_choices = []  # concatenate choices for parameters
+    for key,entries in var_choices.items():
+        if isinstance(entries, str):
+            all_choices.append(entries)
+        else:
+            all_choices.extend([entry for entry in entries])
     return (all_choices,)
 
 
@@ -655,12 +852,11 @@ def _(
     all_choices,
     df,
     format_filters,
-    load_filters_btn,
     loaded_params,
-    mo,
     previous_params,
     var_choices,
 ):
+
     def load_filters(df, filter_params):
         import operator
         from functools import reduce
@@ -677,20 +873,29 @@ def _(
 
     if loaded_params():
         loaded_transforms = format_filters(previous_params['filters'])
+    return loaded_transforms, prefiltered_df
 
+
+@app.cell
+def _(mo, prefiltered_df):
     filter_ui = mo.ui.dataframe(prefiltered_df)
+    confirm_filters = mo.ui.run_button(label='Confirm filters')
+    return confirm_filters, filter_ui
 
+
+@app.cell
+def _(filter_ui, load_filters_btn, loaded_transforms):
     if load_filters_btn.value:
         filter_ui._Initialized = False
         preloaded_args = filter_ui._args
         preloaded_args.initial_value["transforms"] = loaded_transforms
         filter_ui._initialize(preloaded_args)
         filter_ui._Initialized = True
-    return (filter_ui,)
+    return
 
 
 @app.cell
-def _(filter_ui, load_filters_btn, mo):
+def _(confirm_filters, filter_ui, load_filters_btn, mo):
 
     mo.output.append(mo.md(f'''### Click to transform dataset 
              For example, to select only female subjects or a specific experimental group, or both:<br>
@@ -698,6 +903,7 @@ def _(filter_ui, load_filters_btn, mo):
 
     mo.output.append(filter_ui)
     mo.output.append(load_filters_btn)
+    mo.output.append(confirm_filters.right())
     mo.output.append(mo.md('<br>'))
 
     if load_filters_btn.value:  # if loading saved filters
@@ -708,8 +914,8 @@ def _(filter_ui, load_filters_btn, mo):
 
 
 @app.cell
-def _(filter_ui):
-
+def _(confirm_filters, filter_ui, mo):
+    mo.stop(confirm_filters.value is None)
     # retrieve filters applied
     if filter_ui._last_transforms.transforms != []:  # transformations made or loaded
         filter_type = filter_ui._last_transforms.transforms[0].type.value
@@ -742,8 +948,16 @@ def _(mo):
 
 
 @app.cell
-def _(df, group_variable, make_categorical, mo, plt):
-
+def _(
+    df,
+    group_variable,
+    loaded_params,
+    make_categorical,
+    mo,
+    plt,
+    submit_choices,
+):
+    mo.stop((submit_choices.value is False) and (not loaded_params()))
     _, labels = make_categorical(df[group_variable[0]]).items()
     group1, group2 = list(labels[1])
 
@@ -1003,7 +1217,7 @@ def _(data, get_range, mo, np, set_compare_metric, set_range):
         global data
         # Update the selected metric state
         set_compare_metric(new_metric_value)
-    
+
         df = data.scaled_df.copy()
         # --- Logic to automatically set slider range based on new_metric_value ---
         if new_metric_value == 'si_score':
@@ -1294,7 +1508,7 @@ def _(mo, save_scatter_button):
         mo.md("### <span style='border: 2px solid coral;padding:4px 5px;display:inline-block'>:arrow_down_small:PCA analysis"),
             mo.md(f"""
             PCA includes two plots:  
-        
+
             - biplot of individual data points for scaled metrics, colored by index score
             - correlation matrix of scaled metrics to each principal component
             <br>
